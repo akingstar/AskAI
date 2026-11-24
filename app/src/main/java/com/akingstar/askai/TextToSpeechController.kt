@@ -9,17 +9,17 @@ class TextToSpeechController(
     private val ready: (Boolean) -> Unit
 ) {
     private var engine: TextToSpeech? = null
-    var language: String = "hi-IN"
+    private var languageTag: String = "hi-IN"
 
     init {
         engine = TextToSpeech(context) { status ->
             ready(status == TextToSpeech.SUCCESS)
-            setLanguage(language)
+            setLanguage(languageTag)
         }
     }
 
     fun setLanguage(tag: String) {
-        language = tag
+        languageTag = tag
         val locale = Locale.forLanguageTag(tag)
         engine?.language = locale
     }
