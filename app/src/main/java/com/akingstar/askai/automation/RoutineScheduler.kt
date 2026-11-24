@@ -1,13 +1,42 @@
 package com.akingstar.askai.automation
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.WorkManager
+import java.util.Locale
 import java.util.concurrent.TimeUnit
+
+internal object RoutineSchedulePolicy {
+    fun isValidName(name: String): Boolean {
+        val clean = name.trim()
+        return clean.isNotBlank() && clean.length <= 40
+    }
+
+    fun isValidDelay(minutes: Long): Boolean = minutes in 1..525600
+
+    fun isValidRecurringInterval(minutes: Long): Boolean =
+        minutes in 15..525600
+}
+
+internal object RoutineWorkNames {
+    private fun normalized(name: String): String =
+        name.trim().lowercase(Locale.ROOT)
+
+    fun oneTime(name: String): String =
+        "askai-reminder-once-${normalized(name)}"
+
+    fun recurring(name: String): String =
+        "askai-reminder-recurring-${normalized(name)}"
+
+    // Previous app versions used one shared unique-work name.
+    fun legacy(name: String): String =
+        "askai-reminder-${name.trim().lowercase()}"
+}
 
 class RoutineScheduler(context: Context) {
     private val app = context.applicationContext
@@ -15,8 +44,9 @@ class RoutineScheduler(context: Context) {
 
     fun schedule(name: String, delayMinutes: Long): Boolean {
         val clean = name.trim()
-        if (clean.isBlank() || clean.length > 40) return false
-        if (delayMinutes !in 1..525600) return false
+        if (!RoutineSchedulePolicy.isValidName(clean) ||
+            !RoutineSchedulePolicy.isValidDelay(delayMinutes)
+        ) return false
 
         return runCatching {
             val data = Data.Builder()
@@ -27,14 +57,15 @@ class RoutineScheduler(context: Context) {
                 .setInputData(data)
                 .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
                 .setBackoffCriteria(
-                    androidx.work.BackoffPolicy.EXPONENTIAL,
+                    BackoffPolicy.EXPONENTIAL,
                     30,
                     TimeUnit.SECONDS
                 )
                 .build()
 
+            work.cancelUniqueWork(RoutineWorkNames.legacy(clean))
             work.enqueueUniqueWork(
-                "askai-reminder-${clean.lowercase()}",
+                RoutineWorkNames.oneTime(clean),
                 ExistingWorkPolicy.REPLACE,
                 request
             )
@@ -44,8 +75,9 @@ class RoutineScheduler(context: Context) {
 
     fun scheduleRecurring(name: String, intervalMinutes: Long): Boolean {
         val clean = name.trim()
-        if (clean.isBlank() || clean.length > 40) return false
-        if (intervalMinutes !in 15..525600) return false
+        if (!RoutineSchedulePolicy.isValidName(clean) ||
+            !RoutineSchedulePolicy.isValidRecurringInterval(intervalMinutes)
+        ) return false
 
         return runCatching {
             val data = Data.Builder()
@@ -58,14 +90,15 @@ class RoutineScheduler(context: Context) {
             )
                 .setInputData(data)
                 .setBackoffCriteria(
-                    androidx.work.BackoffPolicy.EXPONENTIAL,
+                    BackoffPolicy.EXPONENTIAL,
                     30,
                     TimeUnit.SECONDS
                 )
                 .build()
 
+            work.cancelUniqueWork(RoutineWorkNames.legacy(clean))
             work.enqueueUniquePeriodicWork(
-                "askai-reminder-${clean.lowercase()}",
+                RoutineWorkNames.recurring(clean),
                 ExistingPeriodicWorkPolicy.REPLACE,
                 request
             )
@@ -75,10 +108,12 @@ class RoutineScheduler(context: Context) {
 
     fun cancel(name: String): Boolean {
         val clean = name.trim()
-        if (clean.isBlank() || clean.length > 40) return false
+        if (!RoutineSchedulePolicy.isValidName(clean)) return false
 
         return runCatching {
-            work.cancelUniqueWork("askai-reminder-${clean.lowercase()}")
+            work.cancelUniqueWork(RoutineWorkNames.legacy(clean))
+            work.cancelUniqueWork(RoutineWorkNames.oneTime(clean))
+            work.cancelUniqueWork(RoutineWorkNames.recurring(clean))
             true
         }.getOrDefault(false)
     }
