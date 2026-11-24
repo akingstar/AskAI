@@ -17,24 +17,46 @@ object PlanValidator {
         "storage", "network", "location"
     )
 
-    fun parse(json: String): ActionPlan? = try {
-        val root = JSONObject(json)
-        if (root.keys().asSequence().toSet() != setOf("language", "steps")) return null
-        val language = root.getString("language")
-        val array = root.getJSONArray("steps")
-        if (array.length() !in 1..5) return null
-        val steps = ArrayList<ActionStep>()
-        for (i in 0 until array.length()) {
-            val item = array.getJSONObject(i)
-            if (item.keys().asSequence().toSet() != setOf("action", "target", "value")) return null
-            val action = item.getString("action")
-            val target = item.getString("target")
-            val value = item.getString("value")
-            if (action !in allowed || target.length > 160 || value.length > 500) return null
-            steps.add(ActionStep(action, target, value))
+    fun parse(json: String): ActionPlan? {
+        return try {
+            val root = JSONObject(json)
+
+            if (root.keys().asSequence().toSet() != setOf("language", "steps")) {
+                return null
+            }
+
+            val language = root.getString("language")
+            val array = root.getJSONArray("steps")
+
+            if (array.length() !in 1..5) {
+                return null
+            }
+
+            val steps = ArrayList<ActionStep>()
+
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+
+                if (item.keys().asSequence().toSet() != setOf("action", "target", "value")) {
+                    return null
+                }
+
+                val action = item.getString("action")
+                val target = item.getString("target")
+                val value = item.getString("value")
+
+                if (action !in allowed || target.length > 160 || value.length > 500) {
+                    return null
+                }
+
+                steps.add(ActionStep(action, target, value))
+            }
+
+            ActionPlan(language, steps)
+        } catch (_: Exception) {
+            null
         }
-        ActionPlan(language, steps)
-    } catch (_: Exception) { null }
+    }
 
     fun encode(plan: ActionPlan): String {
         val arr = JSONArray()
