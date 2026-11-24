@@ -35,16 +35,22 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
         val step = steps[index]
         val sensitiveText = "${step.action} ${step.target} ${step.value}"
 
-        if (SafetyGate.blocked(sensitiveText)) {
+        val appWarning = if (step.action == "open_app") {
+            SafetyGate.warningForApp(step.target)
+        } else null
+
+        if (SafetyGate.blocked(sensitiveText) ||
+            SafetyGate.isNeverAllowedAction(step.action)
+        ) {
             speak("सुरक्षा के लिए यह काम रोक दिया गया है।")
             executeAt(steps, index + 1)
             return
         }
 
-        if (SafetyGate.needsConfirmation(step.action, step.target)) {
+        if (SafetyGate.needsConfirmation(step.action, step.target) || appWarning != null) {
             AlertDialog.Builder(context)
                 .setTitle("Ask AI — पुष्टि जरूरी")
-                .setMessage("क्या आप यह काम करना चाहते हैं?\\n${step.action}: ${step.target}")
+                .setMessage(appWarning ?: "क्या आप यह काम करना चाहते हैं?\\n${step.action}: ${step.target}")
                 .setPositiveButton("हाँ, आगे बढ़ें") { _, _ ->
                     runStep(step)
                     executeAt(steps, index + 1)

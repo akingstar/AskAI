@@ -24,9 +24,7 @@ class MainActivity : Activity() {
     private lateinit var tts: TextToSpeechController
     private lateinit var executor: ActionExecutor
     private val permissions = arrayListOf(
-        Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS,
-        Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS,
-        Manifest.permission.CAMERA
+        Manifest.permission.RECORD_AUDIO
     )
     private val languages = listOf("हिन्दी" to "hi-IN", "English" to "en-IN")
 
@@ -64,8 +62,17 @@ class MainActivity : Activity() {
         val url = findViewById<EditText>(R.id.workerUrl)
         url.setText(prefs.getString("worker_url", ""))
         findViewById<Button>(R.id.saveWorker).setOnClickListener {
-            prefs.edit().putString("worker_url", url.text.toString().trim()).apply()
-            status.text = "AI URL सेव हो गया।"
+            val endpoint = url.text.toString().trim()
+            if (endpoint.isNotEmpty() && !AIClient.isSecureEndpoint(endpoint)) {
+                status.text = "सुरक्षित HTTPS Worker URL डालें।"
+                return@setOnClickListener
+            }
+            prefs.edit().putString("worker_url", endpoint).apply()
+            status.text = if (endpoint.isBlank()) {
+                "Offline मोड सेव हो गया। आपकी कमांड फोन पर ही समझी जाएगी।"
+            } else {
+                "HTTPS Worker सेव हुआ। आपकी कमांड का टेक्स्ट इस सर्वर पर भेजा जाएगा।"
+            }
         }
         showPermissions()
     }
