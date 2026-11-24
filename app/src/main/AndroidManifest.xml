@@ -41,7 +41,8 @@
         <activity android:name=".LocalHistoryActivity" android:exported="false"/>
         <activity android:name=".OnboardingActivity" android:exported="false"/>
         <activity android:name=".AskAISettingsActivity" android:exported="false"/>
-        <activity android:name=".HelpActivity" android:exported="false"/>\n        <service android:name=".ListeningService" android:exported="false" android:foregroundServiceType="microphone"/>
+        <activity android:name=".HelpActivity" android:exported="false"/>
+        <service android:name=".ListeningService" android:exported="false" android:foregroundServiceType="microphone"/>
         <service android:name=".AskAIAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
