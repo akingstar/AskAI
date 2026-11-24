@@ -13,7 +13,7 @@ object OfflineParser {
         listOf("torch_off", "flashlight off", "टॉर्च बंद", "torch band"),
         listOf("volume_up", "volume up", "आवाज बढ़ाओ", "volume badhao", "आवाज़ तेज"),
         listOf("volume_down", "volume down", "आवाज कम", "volume kam", "आवाज़ घटाओ"),
-        listOf("camera", "camera kholo", "कैमरा खोलो", "फोटो खींचो", "photo lo"),
+        listOf("camera", "open camera", "camera open", "camera kholo", "कैमरा खोलो", "फोटो खींचो", "photo lo"),
         listOf("selfie", "selfie", "सेल्फी", "सेल्फी लो"),
         listOf("gallery", "gallery kholo", "गैलरी खोलो", "photos kholo"),
         listOf("wifi_settings", "wifi", "वाईफाई", "वाई फाई सेटिंग"),
