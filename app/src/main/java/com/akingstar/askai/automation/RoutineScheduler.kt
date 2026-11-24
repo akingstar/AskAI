@@ -112,40 +112,63 @@ class RoutineScheduler(context: Context) {
     ) {
         Thread({
             val lines = mutableListOf<String>()
+            var totalActive = 0
+            var timedOut = false
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(6)
 
-            routines.take(50).forEach { routine ->
+            for (routine in routines.take(50)) {
                 val candidates = listOf(
                     "एक बार" to RoutineWorkNames.oneTime(routine.name),
                     "दोहराने वाला" to RoutineWorkNames.recurring(routine.name),
                     "पुराना" to RoutineWorkNames.legacy(routine.name)
                 )
 
-                candidates.forEach { (label, uniqueName) ->
+                for ((label, uniqueName) in candidates) {
+                    val remaining = deadline - System.nanoTime()
+                    if (remaining <= 0L) {
+                        timedOut = true
+                        break
+                    }
+
                     val infos = runCatching {
                         work.getWorkInfosForUniqueWork(uniqueName)
-                            .get(2, TimeUnit.SECONDS)
-                    }.getOrDefault(emptyList())
+                            .get(remaining, TimeUnit.NANOSECONDS)
+                    }.getOrElse {
+                        if (System.nanoTime() >= deadline) timedOut = true
+                        emptyList()
+                    }
 
-                    infos.filter {
-                        it.state == androidx.work.WorkInfo.State.ENQUEUED ||
-                            it.state == androidx.work.WorkInfo.State.RUNNING ||
-                            it.state == androidx.work.WorkInfo.State.BLOCKED
-                    }.forEach { info ->
+                    for (info in infos) {
                         val state = when (info.state) {
                             androidx.work.WorkInfo.State.ENQUEUED -> "आने वाला"
                             androidx.work.WorkInfo.State.RUNNING -> "चल रहा है"
                             androidx.work.WorkInfo.State.BLOCKED -> "रुका हुआ"
-                            else -> info.state.name
+                            else -> null
+                        } ?: continue
+
+                        totalActive++
+                        if (lines.size < 12) {
+                            lines.add("${routine.name} — $label — $state")
                         }
-                        lines.add("${routine.name} — $label — $state")
                     }
+                    if (timedOut) break
                 }
+                if (timedOut) break
             }
 
-            val result = if (lines.isEmpty()) {
-                "अभी कोई pending routine reminder नहीं है।"
-            } else {
-                "Scheduled reminders:\\n" + lines.joinToString("\\n")
+            val result = buildString {
+                if (lines.isEmpty()) {
+                    append("अभी कोई pending routine reminder नहीं मिला।")
+                } else {
+                    append("Scheduled reminders:\n")
+                    append(lines.joinToString("\n"))
+                    if (totalActive > lines.size) {
+                        append("\nऔर ${totalActive - lines.size} reminders भी हैं।")
+                    }
+                }
+                if (timedOut) {
+                    append("\nकुछ reminders की जाँच समय सीमा के कारण पूरी नहीं हो सकी।")
+                }
             }
             onResult(result)
         }, "AskAI-Reminder-Status").apply {

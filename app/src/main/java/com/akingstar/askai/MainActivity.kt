@@ -136,6 +136,26 @@ class MainActivity : Activity() {
 
 
                 command.matches(Regex(
+                    "^(?:routine reminders?|reminders|रूटीन रिमाइंडर(?: दिखाओ)?|रिमाइंडर दिखाओ)$",
+                    RegexOption.IGNORE_CASE
+                )) -> {
+                    status.text = "Scheduled reminders देख रहा हूँ..."
+                    tts.speak("जी, आपके रिमाइंडर देख रहा हूँ।")
+                    routineScheduler.listScheduled(automationStore.list()) { message ->
+                        runOnUiThread {
+                            status.text = message
+                            val spoken = if (message.startsWith("अभी कोई")) {
+                                message
+                            } else {
+                                "आपके scheduled reminders स्क्रीन पर दिखा दिए हैं। " +
+                                    message.lines().drop(1).take(3).joinToString("। ")
+                            }
+                            tts.speak(spoken.take(350))
+                        }
+                    }
+                    true
+                }
+                command.matches(Regex(
                     "^(?:routine history clear|रूटीन हिस्ट्री साफ करो|रूटीन इतिहास मिटाओ)$",
                     RegexOption.IGNORE_CASE
                 )) -> {
