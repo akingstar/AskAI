@@ -1,6 +1,7 @@
 package com.akingstar.askai
 
 import com.akingstar.askai.automation.AutomationStore
+import com.akingstar.askai.automation.AutomationHistoryStore
 
 import android.Manifest
 import android.app.Activity
@@ -40,6 +41,7 @@ class MainActivity : Activity() {
         tts = TextToSpeechController(this) {}
         executor = ActionExecutor(this) { tts.speak(it) }
         val automationStore = AutomationStore(this)
+        val automationHistory = AutomationHistoryStore(this)
         var lastPlan: ActionPlan? = null
 
         speech = SpeechController(this, { heard ->
@@ -59,6 +61,16 @@ class MainActivity : Activity() {
             ).find(command)
 
             val handled = when {
+                command.matches(Regex(
+                    "^(?:routine history|रूटीन हिस्ट्री|रूटीन इतिहास)$",
+                    RegexOption.IGNORE_CASE
+                )) -> {
+                    val message = automationHistory.summary()
+                    status.text = message
+                    tts.speak(message)
+                    true
+                }
+
                 command.matches(Regex(
                     "^(?:meri\\s+)?(?:routines|routine list|रूटीन(?:\\s+दिखाओ)?)$",
                     RegexOption.IGNORE_CASE
@@ -102,6 +114,7 @@ class MainActivity : Activity() {
                     } else {
                         status.text = "$name रूटीन शुरू कर रहा हूँ।"
                         tts.speak("जी, रूटीन शुरू कर रहा हूँ।")
+                        automationHistory.record(name, "STARTED")
                         executor.execute(plan)
                     }
                     true
