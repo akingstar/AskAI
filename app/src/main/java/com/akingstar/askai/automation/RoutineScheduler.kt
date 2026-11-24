@@ -3,7 +3,7 @@ package com.akingstar.askai.automation
 import android.content.Context
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OneTimeWorkRequestBuilder\nimport androidx.work.PeriodicWorkRequestBuilder\nimport androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
@@ -34,6 +34,37 @@ class RoutineScheduler(context: Context) {
             work.enqueueUniqueWork(
                 "askai-reminder-${clean.lowercase()}",
                 ExistingWorkPolicy.REPLACE,
+                request
+            )
+            true
+        }.getOrDefault(false)
+    }
+
+    fun scheduleRecurring(name: String, intervalMinutes: Long): Boolean {
+        val clean = name.trim()
+        if (clean.isBlank() || clean.length > 40) return false
+        if (intervalMinutes !in 15..525600) return false
+
+        return runCatching {
+            val data = Data.Builder()
+                .putString("routine_name", clean)
+                .build()
+
+            val request = PeriodicWorkRequestBuilder<RoutineReminderWorker>(
+                intervalMinutes,
+                TimeUnit.MINUTES
+            )
+                .setInputData(data)
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.EXPONENTIAL,
+                    30,
+                    TimeUnit.SECONDS
+                )
+                .build()
+
+            work.enqueueUniquePeriodicWork(
+                "askai-reminder-${clean.lowercase()}",
+                ExistingPeriodicWorkPolicy.REPLACE,
                 request
             )
             true

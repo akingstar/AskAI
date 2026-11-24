@@ -11,6 +11,13 @@ import android.media.AudioManager
 import android.hardware.camera2.CameraManager
 import android.widget.Toast
 
+data class ExecutionSummary(
+    val totalSteps: Int,
+    val succeededSteps: Int,
+    val failedSteps: Int,
+    val cancelledSteps: Int
+)
+
 class ActionExecutor(private val context: Context, private val speak: (String) -> Unit) {
     private val packages = mapOf(
         "youtube" to "com.google.android.youtube",
@@ -27,11 +34,33 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
     )
 
     fun execute(plan: ActionPlan) {
-        executeAt(plan.steps, 0)
+        execute(plan) {}
     }
 
-    private fun executeAt(steps: List<ActionStep>, index: Int) {
-        if (index >= steps.size) return
+    fun execute(plan: ActionPlan, onComplete: (ExecutionSummary) -> Unit) {
+        executeAt(plan.steps, 0, 0, 0, 0, onComplete)
+    }
+
+    private fun executeAt(
+        steps: List<ActionStep>,
+        index: Int,
+        succeeded: Int,
+        failed: Int,
+        cancelled: Int,
+        onComplete: (ExecutionSummary) -> Unit
+    ) {
+        if (index >= steps.size) {
+            onComplete(
+                ExecutionSummary(
+                    totalSteps = steps.size,
+                    succeededSteps = succeeded,
+                    failedSteps = failed,
+                    cancelledSteps = cancelled
+                )
+            )
+            return
+        }
+
         val step = steps[index]
         val sensitiveText = "${step.action} ${step.target} ${step.value}"
 
@@ -43,7 +72,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
             SafetyGate.isNeverAllowedAction(step.action)
         ) {
             speak("सुरक्षा के लिए यह काम रोक दिया गया है।")
-            executeAt(steps, index + 1)
+            executeAt(steps, index + 1, succeeded, failed + 1, cancelled, onComplete)
             return
         }
 
@@ -52,29 +81,43 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                 .setTitle("Ask AI — पुष्टि जरूरी")
                 .setMessage(appWarning ?: "क्या आप यह काम करना चाहते हैं?\\n${step.action}: ${step.target}")
                 .setPositiveButton("हाँ, आगे बढ़ें") { _, _ ->
-                    runStep(step)
-                    executeAt(steps, index + 1)
+                    val ok = runStep(step)
+                    executeAt(
+                        steps, index + 1,
+                        succeeded + if (ok) 1 else 0,
+                        failed + if (ok) 0 else 1,
+                        cancelled,
+                        onComplete
+                    )
                 }
                 .setNegativeButton("नहीं") { _, _ ->
                     speak("ठीक है जी, यह काम रद्द कर दिया।")
-                    executeAt(steps, index + 1)
+                    executeAt(steps, index + 1, succeeded, failed, cancelled + 1, onComplete)
                 }
                 .setOnCancelListener {
                     speak("काम रद्द कर दिया।")
-                    executeAt(steps, index + 1)
+                    executeAt(steps, index + 1, succeeded, failed, cancelled + 1, onComplete)
                 }
                 .show()
         } else {
-            runStep(step)
-            executeAt(steps, index + 1)
+            val ok = runStep(step)
+            executeAt(
+                steps, index + 1,
+                succeeded + if (ok) 1 else 0,
+                failed + if (ok) 0 else 1,
+                cancelled,
+                onComplete
+            )
         }
     }
 
-    private fun runStep(step: ActionStep) {
-        try {
+    private fun runStep(step: ActionStep): Boolean {
+        return try {
             executeStep(step)
+            true
         } catch (_: Exception) {
             speak("यह काम इस फोन पर पूरा नहीं हो सका।")
+            false
         }
     }
 

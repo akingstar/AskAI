@@ -63,6 +63,29 @@ class MainActivity : Activity() {
             ).find(command)
 
             val handled = when {
+                Regex(
+                    "^(?:routine)\\s+every\\s+(.+)\\s+(\\d{1,6})\\s*(?:minutes?|mins?)$|^रूटीन\\s+हर\\s+(.+)\\s+(\\d{1,6})\\s*मिनट$",
+                    RegexOption.IGNORE_CASE
+                ).find(command) != null -> {
+                    val match = Regex(
+                        "^(?:routine)\\s+every\\s+(.+)\\s+(\\d{1,6})\\s*(?:minutes?|mins?)$|^रूटीन\\s+हर\\s+(.+)\\s+(\\d{1,6})\\s*मिनट$",
+                        RegexOption.IGNORE_CASE
+                    ).find(command)!!
+                    val name = (match.groupValues[1].ifBlank { match.groupValues[3] }).trim()
+                    val interval = (match.groupValues[2].ifBlank { match.groupValues[4] }).toLongOrNull() ?: 0L
+                    val exists = automationStore.list().any { it.name.equals(name, true) }
+                    val ok = exists && routineScheduler.scheduleRecurring(name, interval)
+                    val message = when {
+                        !exists -> "यह सेव रूटीन नहीं मिली।"
+                        ok -> "$name का रिमाइंडर हर $interval मिनट में दोहराया जाएगा।"
+                        else -> "दोहराने का अंतर कम से कम 15 मिनट होना चाहिए।"
+                    }
+                    status.text = message
+                    tts.speak(message)
+                    true
+                }
+
+
 
                 Regex(
                     "^(?:routine|रूटीन)\\s+(?:schedule|remind|याद दिलाना|रिमाइंडर)\\s+(.+)\\s+(\\d{1,6})\\s*(?:minutes?|mins?|मिनट)?$",
@@ -161,8 +184,25 @@ class MainActivity : Activity() {
                     } else {
                         status.text = "$name रूटीन शुरू कर रहा हूँ।"
                         tts.speak("जी, रूटीन शुरू कर रहा हूँ।")
-                        automationHistory.record(name, "STARTED")
-                        executor.execute(plan)
+                        executor.execute(plan) { result ->
+                            val finalStatus = when {
+                                result.failedSteps == 0 && result.cancelledSteps == 0 -> "SUCCESS"
+                                result.succeededSteps == 0 && result.failedSteps == 0 -> "CANCELLED"
+                                result.succeededSteps == 0 -> "FAILED"
+                                else -> "PARTIAL"
+                            }
+                            automationHistory.record(name, finalStatus)
+                            val detail = "$name: $finalStatus (${result.succeededSteps}/${result.totalSteps})"
+                            status.text = detail
+                            tts.speak(
+                                when (finalStatus) {
+                                    "SUCCESS" -> "रूटीन पूरी हो गई।"
+                                    "CANCELLED" -> "रूटीन के कुछ काम रद्द किए गए।"
+                                    "FAILED" -> "रूटीन पूरी नहीं हो सकी।"
+                                    else -> "रूटीन आंशिक रूप से पूरी हुई।"
+                                }
+                            )
+                        }
                     }
                     true
                 }
