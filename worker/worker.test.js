@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validatePlan } from "./worker.js";
+import worker, { validatePlan, serializeValidPlan } from "./worker.js";
 
 const step = (extra = {}) => ({
   action: "torch", target: "", value: "", ...extra
@@ -76,4 +76,74 @@ test("rejects malformed step types and oversized strings", () => {
 test("rejects empty or oversized step arrays", () => {
   assert.equal(validatePlan(plan([])), false);
   assert.equal(validatePlan(plan(Array.from({ length: 6 }, () => step()))), false);
+});
+
+
+test("serializes a valid provider plan", () => {
+  const result = serializeValidPlan(JSON.stringify(plan()));
+  assert.equal(result, JSON.stringify(plan()));
+});
+
+test("rejects malformed provider JSON", () => {
+  assert.equal(serializeValidPlan("{invalid"), null);
+});
+
+test("rejects schema-invalid provider response", () => {
+  assert.equal(
+    serializeValidPlan(JSON.stringify(plan([step({ action: "unknown" })]))),
+    null
+  );
+});
+
+
+test("Gemini invalid response retries Groq and returns valid plan", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url) => {
+    const address = String(url);
+    calls.push(address);
+
+    if (address.includes("generativelanguage.googleapis.com")) {
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: "{bad json" }] } }]
+      }), { status: 200 });
+    }
+
+    if (address.includes("api.groq.com")) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(plan()) } }]
+      }), { status: 200 });
+    }
+
+    throw new Error("Unexpected provider URL");
+  };
+
+  try {
+    const env = {
+      GEMINI_API_KEY: "test-key",
+      GROQ_API_KEY: "test-key",
+      RATE_LIMIT: {
+        get: async () => null,
+        put: async () => {}
+      }
+    };
+
+    const request = new Request("https://worker.test/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "torch on karo" })
+    });
+
+    const result = await worker.fetch(request, env);
+    const body = await result.json();
+
+    assert.equal(result.status, 200);
+    assert.equal(body.result, JSON.stringify(plan()));
+    assert.equal(calls.length, 2);
+    assert.match(calls[0], /generativelanguage/);
+    assert.match(calls[1], /api.groq.com/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

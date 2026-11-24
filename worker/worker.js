@@ -89,6 +89,22 @@ export function validatePlan(parsed) {
   return true;
 }
 
+export function serializeValidPlan(result) {
+  if (typeof result !== "string") return null;
+
+  try {
+    const parsed = JSON.parse(result);
+    if (!validatePlan(parsed)) return null;
+
+    const serialized = JSON.stringify(parsed);
+    if (serialized.length > 8192) return null;
+
+    return serialized;
+  } catch {
+    return null;
+  }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
@@ -113,19 +129,30 @@ export default {
     const system = `You are Ask AI, a safe Hindi-first Android phone assistant. Understand Hindi, Hinglish and English. Return JSON only with root keys language and steps. Use 1 to 5 steps. Each step has action,target,value strings and may optionally have condition. A condition gates only its own step; false means SKIPPED, unavailable or invalid inputs must fail safely. Condition schema exactly: {"type":"BATTERY_PERCENT|TIME_OF_DAY|PREVIOUS_STEP","operator":"...","value":0,"upperValue":0}. BATTERY_PERCENT operators LESS_THAN, AT_LEAST, EQUALS; value 0..100 and upperValue 0. TIME_OF_DAY operator BETWEEN; value and upperValue are minutes after midnight, 0..1439, overnight ranges allowed. PREVIOUS_STEP operators SUCCEEDED or FAILED; value and upperValue 0; refers only to the immediately previous step and is forbidden on the first step. Never invent a condition if not requested. Use only supported safe actions. Never invent phone numbers. Never perform payments, UPI, OTP, PIN, password, factory reset or destructive actions. If uncertain, return a clarification-safe response. No markdown.`;
     const prompt = `${system}\nUser command: ${body.text}`;
 
-    let result = await gemini(env, prompt);
-    if (!result) result = await groq(env, prompt);
-    if (!result) return response({ error: "AI providers unavailable" }, 503);
+    let serialized = null;
+    let providerResponded = false;
 
-    try {
-      const parsed = JSON.parse(result);
-      if (!validatePlan(parsed)) throw new Error("schema");
-      const serialized = JSON.stringify(parsed);
-      if (serialized.length > 8192) throw new Error("size");
-      return response({ result: serialized });
-    } catch {
-      return response({ error: "Invalid model response" }, 502);
+    const geminiResult = await gemini(env, prompt);
+    if (geminiResult !== null) {
+      providerResponded = true;
+      serialized = serializeValidPlan(geminiResult);
     }
+
+    if (!serialized) {
+      const groqResult = await groq(env, prompt);
+      if (groqResult !== null) {
+        providerResponded = true;
+        serialized = serializeValidPlan(groqResult);
+      }
+    }
+
+    if (!serialized) {
+      return providerResponded
+        ? response({ error: "Invalid model response" }, 502)
+        : response({ error: "AI providers unavailable" }, 503);
+    }
+
+    return response({ result: serialized });
   }
 };
 

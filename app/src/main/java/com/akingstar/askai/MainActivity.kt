@@ -433,6 +433,7 @@ class MainActivity : Activity() {
 
             if (!handled) {
                 AIClient.request(this@MainActivity, heard) { result ->
+                    if (isFinishing || isDestroyed) return@request
                     when (result) {
                         is AIRequestResult.Success -> {
                             val plan = result.plan
@@ -521,7 +522,31 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == 100) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+
+            if (granted) {
+                val spinner = findViewById<Spinner>(R.id.languageSpinner)
+                val selectedIndex = spinner.selectedItemPosition
+                    .coerceIn(0, languages.lastIndex)
+
+                speech.language = languages[selectedIndex].second
+                tts.setLanguage(speech.language)
+                speech.start()
+            } else {
+                status.text = "Voice इस्तेमाल करने के लिए माइक्रोफोन की अनुमति जरूरी है।"
+                tts.speak("Voice इस्तेमाल करने के लिए माइक्रोफोन की अनुमति दें।")
+            }
+        }
+
         showPermissions()
+    }
+
+    override fun onPause() {
+        if (::speech.isInitialized) speech.stop()
+        super.onPause()
     }
 
     override fun onDestroy() {
