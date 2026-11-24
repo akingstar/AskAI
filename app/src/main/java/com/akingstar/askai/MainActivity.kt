@@ -2,6 +2,7 @@ package com.akingstar.askai
 
 import com.akingstar.askai.automation.AutomationStore
 import com.akingstar.askai.automation.AutomationHistoryStore
+import com.akingstar.askai.automation.RoutineScheduler
 
 import android.Manifest
 import android.app.Activity
@@ -42,6 +43,7 @@ class MainActivity : Activity() {
         executor = ActionExecutor(this) { tts.speak(it) }
         val automationStore = AutomationStore(this)
         val automationHistory = AutomationHistoryStore(this)
+        val routineScheduler = RoutineScheduler(this)
         var lastPlan: ActionPlan? = null
 
         speech = SpeechController(this, { heard ->
@@ -61,6 +63,51 @@ class MainActivity : Activity() {
             ).find(command)
 
             val handled = when {
+
+                Regex(
+                    "^(?:routine|रूटीन)\\s+(?:schedule|remind|याद दिलाना|रिमाइंडर)\\s+(.+)\\s+(\\d{1,6})\\s*(?:minutes?|mins?|मिनट)?$",
+                    RegexOption.IGNORE_CASE
+                ).find(command) != null -> {
+                    val match = Regex(
+                        "^(?:routine|रूटीन)\\s+(?:schedule|remind|याद दिलाना|रिमाइंडर)\\s+(.+)\\s+(\\d{1,6})\\s*(?:minutes?|mins?|मिनट)?$",
+                        RegexOption.IGNORE_CASE
+                    ).find(command)!!
+                    val name = match.groupValues[1].trim()
+                    val minutes = match.groupValues[2].toLongOrNull() ?: 0L
+                    val exists = automationStore.list().any {
+                        it.name.equals(name, true)
+                    }
+                    val ok = exists && routineScheduler.schedule(name, minutes)
+                    val message = when {
+                        !exists -> "यह सेव रूटीन नहीं मिली। पहले रूटीन सेव कीजिए।"
+                        ok -> "$name रूटीन का रिमाइंडर $minutes मिनट बाद आएगा।"
+                        else -> "रिमाइंडर शेड्यूल नहीं हो सका। समय 1 मिनट से अधिक होना चाहिए।"
+                    }
+                    status.text = message
+                    tts.speak(message)
+                    true
+                }
+
+                Regex(
+                    "^(?:routine|रूटीन)\\s+(?:cancel|unschedule|रिमाइंडर हटाओ)\\s+(.+)$",
+                    RegexOption.IGNORE_CASE
+                ).find(command) != null -> {
+                    val name = Regex(
+                        "^(?:routine|रूटीन)\\s+(?:cancel|unschedule|रिमाइंडर हटाओ)\\s+(.+)$",
+                        RegexOption.IGNORE_CASE
+                    ).find(command)!!.groupValues[1].trim()
+                    val ok = routineScheduler.cancel(name)
+                    val message = if (ok) {
+                        "$name रूटीन का रिमाइंडर रद्द कर दिया।"
+                    } else {
+                        "रिमाइंडर रद्द नहीं हो सका।"
+                    }
+                    status.text = message
+                    tts.speak(message)
+                    true
+                }
+
+
                 command.matches(Regex(
                     "^(?:routine history|रूटीन हिस्ट्री|रूटीन इतिहास)$",
                     RegexOption.IGNORE_CASE
