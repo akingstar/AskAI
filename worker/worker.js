@@ -11,6 +11,84 @@ function response(data, status = 200) {
   });
 }
 
+const ALLOWED_ACTIONS = new Set([
+  "open_app", "alarm", "timer", "camera", "selfie", "gallery",
+  "torch", "torch_off", "volume_up", "volume_down", "brightness",
+  "dnd", "ringer", "rotation", "youtube", "maps", "web", "music",
+  "phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar",
+  "wifi_settings", "bluetooth_settings", "mobile_settings",
+  "hotspot_settings", "airplane_settings", "location_settings",
+  "battery", "time", "date", "storage", "network", "location"
+]);
+
+function exactKeys(value, expected) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length &&
+    actual.every((key, index) => key === [...expected].sort()[index]);
+}
+
+function safeString(value, maxLength) {
+  return typeof value === "string" &&
+    value.length <= maxLength &&
+    !/[\u0000-\u001f\u007f-\u009f]/.test(value);
+}
+
+function validCondition(condition, stepIndex) {
+  if (!exactKeys(condition, ["type", "operator", "value", "upperValue"])) return false;
+  if (!Number.isSafeInteger(condition.value) ||
+      !Number.isSafeInteger(condition.upperValue)) return false;
+
+  switch (condition.type) {
+    case "BATTERY_PERCENT":
+      return condition.value >= 0 && condition.value <= 100 &&
+        condition.upperValue === 0 &&
+        ["LESS_THAN", "AT_LEAST", "EQUALS"].includes(condition.operator);
+
+    case "TIME_OF_DAY":
+      return condition.value >= 0 && condition.value <= 1439 &&
+        condition.upperValue >= 0 && condition.upperValue <= 1439 &&
+        condition.operator === "BETWEEN";
+
+    case "PREVIOUS_STEP":
+      return stepIndex > 0 &&
+        condition.value === 0 && condition.upperValue === 0 &&
+        ["SUCCEEDED", "FAILED"].includes(condition.operator);
+
+    default:
+      return false;
+  }
+}
+
+export function validatePlan(parsed) {
+  if (!exactKeys(parsed, ["language", "steps"])) return false;
+  if (!safeString(parsed.language, 20) || !parsed.language.trim()) return false;
+  if (!Array.isArray(parsed.steps) ||
+      parsed.steps.length < 1 || parsed.steps.length > 5) return false;
+
+  for (let i = 0; i < parsed.steps.length; i++) {
+    const step = parsed.steps[i];
+    const baseKeys = ["action", "target", "value"];
+    const hasCondition = step && Object.prototype.hasOwnProperty.call(step, "condition");
+
+    if (!exactKeys(step, hasCondition ? [...baseKeys, "condition"] : baseKeys)) {
+      return false;
+    }
+
+    if (!safeString(step.action, 64) ||
+        !safeString(step.target, 160) ||
+        !safeString(step.value, 500) ||
+        !ALLOWED_ACTIONS.has(step.action)) return false;
+
+    if (step.action === "open_app" &&
+        !step.target.trim() && !step.value.trim()) return false;
+
+    if (hasCondition && !validCondition(step.condition, i)) return false;
+  }
+
+  return true;
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
@@ -32,7 +110,7 @@ export default {
       return response({ error: "Invalid text" }, 400);
     }
 
-    const system = `You are Ask AI, a safe Hindi-first Android phone assistant. Understand the user's language and reply in that language. Return JSON only, with exactly this schema: {"language":"hi-IN","steps":[{"action":"open_app","target":"YouTube","value":""}]}. Root keys are language and steps. Each step has action,target,value. At most five steps. Never invent a phone number. You receive app names and contact display names only, never phone numbers. Never perform payments, UPI, OTP, PIN, password, factory reset or destructive actions. If uncertain, return {"language":"hi-IN","steps":[]}. No markdown.`;
+    const system = `You are Ask AI, a safe Hindi-first Android phone assistant. Understand Hindi, Hinglish and English. Return JSON only with root keys language and steps. Use 1 to 5 steps. Each step has action,target,value strings and may optionally have condition. A condition gates only its own step; false means SKIPPED, unavailable or invalid inputs must fail safely. Condition schema exactly: {"type":"BATTERY_PERCENT|TIME_OF_DAY|PREVIOUS_STEP","operator":"...","value":0,"upperValue":0}. BATTERY_PERCENT operators LESS_THAN, AT_LEAST, EQUALS; value 0..100 and upperValue 0. TIME_OF_DAY operator BETWEEN; value and upperValue are minutes after midnight, 0..1439, overnight ranges allowed. PREVIOUS_STEP operators SUCCEEDED or FAILED; value and upperValue 0; refers only to the immediately previous step and is forbidden on the first step. Never invent a condition if not requested. Use only supported safe actions. Never invent phone numbers. Never perform payments, UPI, OTP, PIN, password, factory reset or destructive actions. If uncertain, return a clarification-safe response. No markdown.`;
     const prompt = `${system}\nUser command: ${body.text}`;
 
     let result = await gemini(env, prompt);
@@ -41,13 +119,10 @@ export default {
 
     try {
       const parsed = JSON.parse(result);
-      if (!parsed || typeof parsed.language !== "string" ||
-          !Array.isArray(parsed.steps) || parsed.steps.length > 5) throw new Error("schema");
-      for (const step of parsed.steps) {
-        if (!step || typeof step.action !== "string" ||
-            typeof step.target !== "string" || typeof step.value !== "string") throw new Error("step");
-      }
-      return response({ result: JSON.stringify(parsed) });
+      if (!validatePlan(parsed)) throw new Error("schema");
+      const serialized = JSON.stringify(parsed);
+      if (serialized.length > 8192) throw new Error("size");
+      return response({ result: serialized });
     } catch {
       return response({ error: "Invalid model response" }, 502);
     }

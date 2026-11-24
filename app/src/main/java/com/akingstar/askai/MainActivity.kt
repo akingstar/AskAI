@@ -360,9 +360,13 @@ class MainActivity : Activity() {
                                         },
                                         onComplete = { result ->
                                             val finalStatus = when {
-                                                result.failedSteps == 0 && result.cancelledSteps == 0 -> "SUCCESS"
-                                                result.succeededSteps == 0 && result.failedSteps == 0 -> "CANCELLED"
-                                                result.succeededSteps == 0 -> "FAILED"
+                                                result.failedSteps == 0 &&
+                                                    result.cancelledSteps == 0 &&
+                                                    result.skippedSteps == 0 -> "SUCCESS"
+                                                result.succeededSteps == 0 &&
+                                                    result.failedSteps == 0 &&
+                                                    result.skippedSteps == 0 -> "CANCELLED"
+                                                result.succeededSteps == 0 && result.failedSteps > 0 -> "FAILED"
                                                 else -> "PARTIAL"
                                             }
                                             val saved = automationHistory.finishExecution(finalStatus)

@@ -38,9 +38,24 @@ object OfflineParser {
         listOf("airtel", "airtel thanks", "एयरटेल")
     )
 
+    private fun hasUnsupportedCondition(text: String): Boolean {
+        val markers = listOf(
+            " agar ", " yadi ", " jab ", " if ", " when ", " unless ",
+            " अगर ", " यदि ", " जब ",
+            " below ", " above ", " less than ", " greater than ",
+            " at least ", " more than ", " ho to ", " se kam ",
+            " se jyada ", " se zyada ", " के बीच ", " से कम ",
+            " से ज्यादा ", " से ज़्यादा ", " हो तो ",
+            " previous step ", " pichla step ", " pichhle step ",
+            " पिछला step ", " पिछले step "
+        )
+        val padded = " $text "
+        return markers.any { padded.contains(it) }
+    }
+
     fun parse(input: String): ActionPlan? {
         val text = clean(input)
-        if (text.isBlank()) return null
+        if (text.isBlank() || hasUnsupportedCondition(text)) return null
         val parts = text.split(Regex("\\s+(?:aur|and|फिर|और|then)\\s+")).filter { it.isNotBlank() }
         val steps = parts.mapNotNull { part ->
             val found = commands.mapNotNull { group ->

@@ -77,4 +77,70 @@ class PlanValidatorTest {
         assertNull(PlanValidator.parse("""{"language":"hi-IN","steps":["""))
     }
 
+
+    @Test fun acceptsLegacyRoutineWithoutCondition() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":""}]}"""
+        val plan = PlanValidator.parse(json)
+        assertNotNull(plan)
+        assertNull(plan!!.steps[0].condition)
+    }
+
+    @Test fun parsesAndEncodesBatteryCondition() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"BATTERY_PERCENT","operator":"LESS_THAN","value":20,"upperValue":0}}]}"""
+        val plan = PlanValidator.parse(json)
+        assertNotNull(plan)
+        assertEquals(20, plan!!.steps[0].condition!!.value)
+        val restored = PlanValidator.parse(PlanValidator.encode(plan))
+        assertEquals(plan, restored)
+    }
+
+    @Test fun rejectsInvalidConditionOperator() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"BATTERY_PERCENT","operator":"BETWEEN","value":20,"upperValue":50}}]}"""
+        assertNull(PlanValidator.parse(json))
+    }
+
+    @Test fun rejectsOutOfRangeConditionValue() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"BATTERY_PERCENT","operator":"LESS_THAN","value":101,"upperValue":0}}]}"""
+        assertNull(PlanValidator.parse(json))
+    }
+
+    @Test fun rejectsUnknownConditionField() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"BATTERY_PERCENT","operator":"LESS_THAN","value":20,"upperValue":0,"extra":true}}]}"""
+        assertNull(PlanValidator.parse(json))
+    }
+
+    @Test fun rejectsFractionalConditionValue() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"BATTERY_PERCENT","operator":"LESS_THAN","value":20.5,"upperValue":0}}]}"""
+        assertNull(PlanValidator.parse(json))
+    }
+
+
+    @Test fun rejectsPreviousStepConditionOnFirstStep() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"PREVIOUS_STEP","operator":"SUCCEEDED","value":0,"upperValue":0}}]}"""
+        assertNull(PlanValidator.parse(json))
+    }
+
+    @Test fun acceptsPreviousStepConditionAfterFirstStep() {
+        val json = """{"language":"hi-IN","steps":[{"action":"camera","target":"","value":""},{"action":"torch","target":"","value":"","condition":{"type":"PREVIOUS_STEP","operator":"SUCCEEDED","value":0,"upperValue":0}}]}"""
+        val plan = PlanValidator.parse(json)
+        assertNotNull(plan)
+        assertEquals(
+            com.akingstar.askai.automation.RoutineConditionType.PREVIOUS_STEP,
+            plan!!.steps[1].condition!!.type
+        )
+    }
+
+    @Test fun acceptsOvernightTimeCondition() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"TIME_OF_DAY","operator":"BETWEEN","value":1320,"upperValue":360}}]}"""
+        val plan = PlanValidator.parse(json)
+        assertNotNull(plan)
+        assertEquals(1320, plan!!.steps[0].condition!!.value)
+        assertEquals(360, plan.steps[0].condition!!.upperValue)
+    }
+
+    @Test fun rejectsOutOfRangeTimeCondition() {
+        val json = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":"","condition":{"type":"TIME_OF_DAY","operator":"BETWEEN","value":1440,"upperValue":360}}]}"""
+        assertNull(PlanValidator.parse(json))
+    }
+
 }

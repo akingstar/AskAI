@@ -10,4 +10,27 @@ class OfflineParserTest {
     @Test fun recognizesEnglishCamera() {
         assertEquals("camera", OfflineParser.parse("open camera")?.steps?.first()?.action)
     }
+
+
+    @Test fun rejectsHindiConditionalCommandInOfflineMode() {
+        assertNull(OfflineParser.parse("अगर बैटरी 20 प्रतिशत से कम हो तो टॉर्च जलाओ"))
+    }
+
+    @Test fun rejectsHinglishConditionalCommandInOfflineMode() {
+        assertNull(OfflineParser.parse("battery 20 percent se kam ho to torch jalao"))
+    }
+
+    @Test fun rejectsEnglishConditionalCommandInOfflineMode() {
+        assertNull(OfflineParser.parse("if battery is below 20 then turn on torch"))
+    }
+
+    @Test fun rejectsPreviousStepConditionInOfflineMode() {
+        assertNull(OfflineParser.parse("if previous step succeeds then open camera"))
+    }
+
+    @Test fun preservesNormalOfflineCommands() {
+        assertEquals("torch", OfflineParser.parse("टॉर्च जलाओ")?.steps?.first()?.action)
+        assertEquals("camera", OfflineParser.parse("open camera")?.steps?.first()?.action)
+    }
+
 }

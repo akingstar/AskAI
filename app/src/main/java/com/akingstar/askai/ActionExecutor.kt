@@ -1,6 +1,8 @@
 package com.akingstar.askai
 
 import android.app.AlertDialog
+import com.akingstar.askai.automation.RoutineConditionEvaluator
+import com.akingstar.askai.automation.RoutineConditionSnapshot
 
 import android.content.Context
 import android.content.Intent
@@ -24,7 +26,8 @@ data class ExecutionSummary(
     val succeededSteps: Int,
     val failedSteps: Int,
     val cancelledSteps: Int,
-    val stepResults: List<StepExecutionResult> = emptyList()
+    val stepResults: List<StepExecutionResult> = emptyList(),
+    val skippedSteps: Int = 0
 )
 
 class ActionExecutor(private val context: Context, private val speak: (String) -> Unit) {
@@ -67,6 +70,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
             0,
             0,
             0,
+            0,
             mutableListOf(),
             onStepResult,
             onComplete
@@ -80,6 +84,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
         succeeded: Int,
         failed: Int,
         cancelled: Int,
+        skipped: Int,
         stepResults: MutableList<StepExecutionResult>,
         onStepResult: (StepExecutionResult) -> Boolean,
         onComplete: (ExecutionSummary) -> Unit
@@ -91,7 +96,8 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                     succeededSteps = succeeded,
                     failedSteps = failed,
                     cancelledSteps = cancelled,
-                    stepResults = stepResults.toList()
+                    stepResults = stepResults.toList(),
+                    skippedSteps = skipped
                 )
             )
             return
@@ -100,7 +106,8 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
         val originalIndex = selectedIndices[position]
         val step = steps[originalIndex]
         val next = { ok: Boolean, resultStatus: String, reason: String,
-                     nextSucceeded: Int, nextFailed: Int, nextCancelled: Int ->
+                     nextSucceeded: Int, nextFailed: Int,
+                     nextCancelled: Int, nextSkipped: Int ->
             val stepResult = StepExecutionResult(
                 index = originalIndex,
                 action = step.action,
@@ -121,7 +128,8 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                         succeededSteps = nextSucceeded,
                         failedSteps = nextFailed + 1,
                         cancelledSteps = nextCancelled,
-                        stepResults = stepResults.toList()
+                        stepResults = stepResults.toList(),
+                        skippedSteps = nextSkipped
                     )
                 )
             } else {
@@ -133,10 +141,68 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                     nextSucceeded,
                     nextFailed,
                     nextCancelled,
+                    nextSkipped,
                     stepResults,
                     onStepResult,
                     onComplete
                 )
+            }
+        }
+
+        step.condition?.let { condition ->
+            val previousStatus = stepResults.lastOrNull()
+                ?.takeIf { it.index == originalIndex - 1 }
+                ?.status
+
+            val batteryIntent = context.registerReceiver(
+                null,
+                android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            )
+            val level = batteryIntent?.getIntExtra(
+                android.os.BatteryManager.EXTRA_LEVEL, -1
+            ) ?: -1
+            val scale = batteryIntent?.getIntExtra(
+                android.os.BatteryManager.EXTRA_SCALE, -1
+            ) ?: -1
+            val batteryPercent = if (scale > 0 && level in 0..scale) {
+                (level * 100) / scale
+            } else null
+
+            val calendar = java.util.Calendar.getInstance()
+            val minuteOfDay =
+                calendar.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+                calendar.get(java.util.Calendar.MINUTE)
+
+            val evaluated = RoutineConditionEvaluator.evaluate(
+                condition,
+                RoutineConditionSnapshot(
+                    batteryPercent = batteryPercent,
+                    minuteOfDay = minuteOfDay,
+                    previousStepStatus = previousStatus
+                )
+            )
+
+            when (evaluated) {
+                false -> {
+                    next(
+                        false, "SKIPPED", "Condition evaluated false",
+                        succeeded, failed, cancelled, skipped + 1
+                    )
+                    return
+                }
+                null -> {
+                    next(
+                        false,
+                        "FAILED",
+                        "Condition could not be evaluated safely",
+                        succeeded,
+                        failed + 1,
+                        cancelled,
+                        skipped
+                    )
+                    return
+                }
+                true -> Unit
             }
         }
 
@@ -150,7 +216,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
         ) {
             speak("सुरक्षा के लिए यह काम रोक दिया गया है।")
             next(false, "BLOCKED", "Safety policy blocked this action",
-                succeeded, failed + 1, cancelled)
+                succeeded, failed + 1, cancelled, skipped)
             return
         }
 
@@ -166,18 +232,19 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                         if (ok) "" else "The action could not be completed",
                         succeeded + if (ok) 1 else 0,
                         failed + if (ok) 0 else 1,
-                        cancelled
+                        cancelled,
+                        skipped
                     )
                 }
                 .setNegativeButton("नहीं") { _, _ ->
                     speak("ठीक है जी, यह काम रद्द कर दिया।")
                     next(false, "CANCELLED", "User declined confirmation",
-                        succeeded, failed, cancelled + 1)
+                        succeeded, failed, cancelled + 1, skipped)
                 }
                 .setOnCancelListener {
                     speak("काम रद्द कर दिया।")
                     next(false, "CANCELLED", "Confirmation dialog dismissed",
-                        succeeded, failed, cancelled + 1)
+                        succeeded, failed, cancelled + 1, skipped)
                 }
                 .show()
         } else {
@@ -188,7 +255,8 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                 if (ok) "" else "The action could not be completed",
                 succeeded + if (ok) 1 else 0,
                 failed + if (ok) 0 else 1,
-                cancelled
+                cancelled,
+                skipped
             )
         }
     }

@@ -10,7 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object AIClient {
-    const val SYSTEM_PROMPT = """You are Ask AI, a safe Hindi-first Android phone assistant. Understand the user's language and reply in that language. Return JSON only, with exactly this schema: {"language":"hi-IN","steps":[{"action":"open_app","target":"YouTube","value":""}]}. The root has only language and steps. Every step has only action,target,value. Use at most five steps. Never invent a phone number. Never execute calls, SMS, contact access, payments, money transfers, OTP, PIN, password, factory reset, deletion or uninstall actions. Use only supported safe actions. Ask for clarification if uncertain. No markdown and no prose outside JSON."""
+    const val SYSTEM_PROMPT = """You are Ask AI, a safe Hindi-first Android phone assistant. Understand Hindi, Hinglish and English and reply in the user's language. Return JSON only. Root schema: {"language":"hi-IN","steps":[{"action":"open_app","target":"YouTube","value":""}]}. Root keys must be exactly language and steps. Use 1 to 5 steps. Every step must have action,target,value strings and may optionally have condition. A condition gates only its own step: if false, that step is skipped; if its inputs are unavailable or invalid, execution fails safely. Condition schema must be exactly {"type":"BATTERY_PERCENT|TIME_OF_DAY|PREVIOUS_STEP","operator":"...","value":0,"upperValue":0}. BATTERY_PERCENT supports LESS_THAN, AT_LEAST, EQUALS with value 0..100 and upperValue 0. TIME_OF_DAY supports BETWEEN with value and upperValue as minutes after midnight, each 0..1439; overnight ranges are allowed. PREVIOUS_STEP supports SUCCEEDED or FAILED, with value and upperValue both 0; it refers only to the immediately preceding step and must never be used on the first step. Do not invent conditions or add condition when the user did not request one. Never invent phone numbers. Never execute calls, SMS, contact access, payments, money transfers, OTP, PIN, password, factory reset, deletion or uninstall actions. Use only supported safe actions. If uncertain, ask for clarification rather than guessing. No markdown and no prose outside JSON."""
 
     fun isSecureEndpoint(value: String): Boolean {
         if (value.isBlank() || value.length > 2048) return false
@@ -44,8 +44,13 @@ object AIClient {
         val prefs = context.getSharedPreferences("askai", Context.MODE_PRIVATE)
         val endpoint = prefs.getString("worker_url", "").orEmpty().trim()
 
-        if (endpoint.isBlank() || !isSecureEndpoint(endpoint)) {
+        if (AIClientFallbackPolicy.shouldUseOfflineParser(endpoint)) {
             callback(OfflineParser.parse(text))
+            return
+        }
+
+        if (!isSecureEndpoint(endpoint)) {
+            callback(null)
             return
         }
 
@@ -88,14 +93,12 @@ object AIClient {
                             }
                         }
                     } catch (_: Exception) {
-                        // Invalid response or network error: use local parser below.
+                        // Keep the result null; never downgrade a cloud request to an offline action.
                     } finally {
                         connection?.disconnect()
                     }
                 }
             }
-
-            if (result == null) result = OfflineParser.parse(text)
 
             val finalResult = result
             Handler(Looper.getMainLooper()).post {
