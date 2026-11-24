@@ -33,4 +33,16 @@ class OfflineParserTest {
         assertEquals("camera", OfflineParser.parse("open camera")?.steps?.first()?.action)
     }
 
+    @Test fun rejectsEntireCommandWhenOnePartIsUnknown() {
+        assertNull(OfflineParser.parse("youtube kholo and send sms"))
+    }
+
+    @Test fun preservesMultiStepCommandWhenEveryPartIsRecognized() {
+        val plan = OfflineParser.parse("टॉर्च जलाओ और कैमरा खोलो")
+        assertNotNull(plan)
+        assertEquals(2, plan!!.steps.size)
+        assertEquals("torch", plan.steps[0].action)
+        assertEquals("camera", plan.steps[1].action)
+    }
+
 }

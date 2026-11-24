@@ -40,22 +40,27 @@ object AIClient {
         return output.toString("UTF-8")
     }
 
-    fun request(context: Context, text: String, callback: (ActionPlan?) -> Unit) {
+    fun request(context: Context, text: String, callback: (AIRequestResult) -> Unit) {
         val prefs = context.getSharedPreferences("askai", Context.MODE_PRIVATE)
         val endpoint = prefs.getString("worker_url", "").orEmpty().trim()
 
         if (AIClientFallbackPolicy.shouldUseOfflineParser(endpoint)) {
-            callback(OfflineParser.parse(text))
+            val plan = OfflineParser.parse(text)
+            callback(
+                if (plan != null) AIRequestResult.Success(plan, offline = true)
+                else AIRequestResult.UnrecognizedCommand
+            )
             return
         }
 
         if (!isSecureEndpoint(endpoint)) {
-            callback(null)
+            callback(AIRequestResult.InvalidEndpoint)
             return
         }
 
         Thread {
-            var result: ActionPlan? = null
+            var result: AIRequestResult? = null
+            var lastFailure: AIRequestResult = AIRequestResult.NetworkError
 
             repeat(2) {
                 if (result == null) {
@@ -86,21 +91,37 @@ object AIClient {
                             val raw = connection.inputStream.use {
                                 readBounded(it, 64 * 1024)
                             }
-                            val response = JSONObject(raw)
-                            val planJson = response.opt("result") as? String
-                            if (!planJson.isNullOrBlank()) {
-                                result = PlanValidator.parse(planJson)
+
+                            val plan = try {
+                                val response = JSONObject(raw)
+                                val planJson = response.opt("result") as? String
+                                if (planJson.isNullOrBlank()) null
+                                else PlanValidator.parse(planJson)
+                            } catch (_: Exception) {
+                                null
+                            }
+
+                            result = if (plan != null) {
+                                AIRequestResult.Success(plan)
+                            } else {
+                                lastFailure = AIRequestResult.InvalidResponse
+                                null
+                            }
+                        } else {
+                            lastFailure = AIRequestResult.ServerError(code)
+                            if (code in 400..499 && code != 429) {
+                                result = lastFailure
                             }
                         }
                     } catch (_: Exception) {
-                        // Keep the result null; never downgrade a cloud request to an offline action.
+                        lastFailure = AIRequestResult.NetworkError
                     } finally {
                         connection?.disconnect()
                     }
                 }
             }
 
-            val finalResult = result
+            val finalResult = result ?: lastFailure
             Handler(Looper.getMainLooper()).post {
                 callback(finalResult)
             }

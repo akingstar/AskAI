@@ -57,7 +57,9 @@ object OfflineParser {
         val text = clean(input)
         if (text.isBlank() || hasUnsupportedCondition(text)) return null
         val parts = text.split(Regex("\\s+(?:aur|and|फिर|और|then)\\s+")).filter { it.isNotBlank() }
-        val steps = parts.mapNotNull { part ->
+        if (parts.isEmpty() || parts.size > 5) return null
+
+        val steps = parts.map { part ->
             val found = commands.mapNotNull { group ->
                 val score = group.drop(1).maxOfOrNull { key ->
                     when {
@@ -69,9 +71,11 @@ object OfflineParser {
                 } ?: 0
                 if (score > 0) group.first() to score else null
             }.maxByOrNull { it.second }?.first
-            if (found == null) null else ActionStep(found, "", part)
+                ?: return null
+
+            ActionStep(found, "", part)
         }
-        if (steps.isEmpty() || steps.size > 5) return null
+        if (steps.isEmpty()) return null
         return ActionPlan(if (input.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN", steps)
     }
 }

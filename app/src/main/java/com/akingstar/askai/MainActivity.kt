@@ -432,15 +432,44 @@ class MainActivity : Activity() {
             }
 
             if (!handled) {
-                AIClient.request(this@MainActivity, heard) { plan ->
-                    if (plan == null) {
-                        status.text = "कमांड समझ नहीं आई।"
-                        tts.speak("माफ कीजिए, मैं समझ नहीं पाया।")
-                    } else {
-                        lastPlan = plan
-                        status.text = "कमांड मिली: ${plan.steps.size} काम"
-                        tts.speak("जी, समझ गया।")
-                        executor.execute(plan)
+                AIClient.request(this@MainActivity, heard) { result ->
+                    when (result) {
+                        is AIRequestResult.Success -> {
+                            val plan = result.plan
+                            lastPlan = plan
+                            status.text = if (result.offline) {
+                                "Offline कमांड मिली: ${plan.steps.size} काम"
+                            } else {
+                                "कमांड मिली: ${plan.steps.size} काम"
+                            }
+                            tts.speak("जी, समझ गया।")
+                            executor.execute(plan)
+                        }
+
+                        AIRequestResult.UnrecognizedCommand -> {
+                            status.text = "कमांड समझ नहीं आई। कृपया दोबारा बोलें।"
+                            tts.speak("माफ कीजिए, यह कमांड समझ नहीं आई। कृपया दोबारा बोलें।")
+                        }
+
+                        AIRequestResult.InvalidEndpoint -> {
+                            status.text = "Worker URL गलत है। HTTPS URL जाँचें।"
+                            tts.speak("AI सेवा का सुरक्षित पता सही नहीं है।")
+                        }
+
+                        AIRequestResult.NetworkError -> {
+                            status.text = "इंटरनेट कनेक्शन या नेटवर्क में समस्या है।"
+                            tts.speak("इंटरनेट कनेक्शन में समस्या है। कृपया बाद में कोशिश करें।")
+                        }
+
+                        is AIRequestResult.ServerError -> {
+                            status.text = "AI सेवा में समस्या है। HTTP ${result.statusCode}"
+                            tts.speak("AI सेवा अभी उपलब्ध नहीं है।")
+                        }
+
+                        AIRequestResult.InvalidResponse -> {
+                            status.text = "AI से सही जवाब नहीं मिला। कृपया दोबारा कोशिश करें।"
+                            tts.speak("AI से सही जवाब नहीं मिला।")
+                        }
                     }
                 }
             }
