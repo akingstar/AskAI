@@ -55,6 +55,33 @@ class AutomationStore(context: Context) {
         readAll().firstOrNull { it.id == id }
 
     @Synchronized
+    fun rename(oldName: String, newName: String): Boolean {
+        val oldClean = oldName.trim()
+        val newClean = newName.trim()
+        if (oldClean.isBlank() || newClean.isBlank() ||
+            newClean.length > 40 || oldClean.equals(newClean, true)) return false
+
+        return runCatching {
+            val routines = readAll().toMutableList()
+            val index = routines.indexOfFirst { it.name.equals(oldClean, true) }
+            if (index < 0 || routines.any {
+                    it.name.equals(newClean, true) && it.id != routines[index].id
+                }) {
+                false
+            } else {
+                routines[index] = routines[index].copy(name = newClean)
+                val array = JSONArray()
+                routines.forEach {
+                    array.put(JSONObject().put("id", it.id)
+                        .put("name", it.name)
+                        .put("plan", it.planJson))
+                }
+                prefs.edit().putString("routines", array.toString()).commit()
+            }
+        }.getOrDefault(false)
+    }
+
+    @Synchronized
     fun delete(id: String): Boolean = runCatching {
         val remaining = readAll().filterNot { it.id == id }
         val array = JSONArray()

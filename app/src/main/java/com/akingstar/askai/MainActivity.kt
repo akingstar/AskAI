@@ -65,6 +65,14 @@ class MainActivity : Activity() {
                 "^(?:routine|रूटीन)\\s+(?:delete|हटाओ|मिटाओ)\\s+(.+)$",
                 RegexOption.IGNORE_CASE
             ).find(command)
+            val updateMatch = Regex(
+                "^(?:routine|रूटीन)\\s+(?:update|edit|अपडेट|बदल दो)\\s+(.+)$",
+                RegexOption.IGNORE_CASE
+            ).find(command)
+            val renameMatch = Regex(
+                "^(?:routine|रूटीन)\\s+(?:rename|नाम बदलो)\\s+(.+?)\\s+(?:to|से)\\s+(.+)$",
+                RegexOption.IGNORE_CASE
+            ).find(command)
 
             val handled = when {
                 Regex(
@@ -197,6 +205,78 @@ class MainActivity : Activity() {
                     }
                     status.text = message
                     tts.speak(message)
+                    true
+                }
+
+                renameMatch != null -> {
+                    val oldName = renameMatch.groupValues[1].trim()
+                    val newName = renameMatch.groupValues[2].trim()
+                    val existing = automationStore.list()
+                        .firstOrNull { it.name.equals(oldName, true) }
+
+                    if (existing == null) {
+                        val message = "यह रूटीन नहीं मिली।"
+                        status.text = message
+                        tts.speak(message)
+                    } else {
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle("रूटीन का नाम बदलें?")
+                            .setMessage("$oldName का नाम बदलकर $newName किया जाएगा। पुराने नाम का reminder cancel होगा।")
+                            .setNegativeButton("रहने दें", null)
+                            .setPositiveButton("नाम बदलें") { _, _ ->
+                                val ok = automationStore.rename(oldName, newName)
+                                if (ok) routineScheduler.cancel(oldName)
+                                val message = if (ok) {
+                                    "रूटीन का नाम बदल दिया। नए नाम के लिए reminder दोबारा schedule करें।"
+                                } else {
+                                    "नाम नहीं बदला। नाम की लंबाई या duplicate नाम जाँचिए।"
+                                }
+                                status.text = message
+                                tts.speak(message)
+                            }
+                            .show()
+                    }
+                    true
+                }
+
+                updateMatch != null -> {
+                    val name = updateMatch.groupValues[1].trim()
+                    val existing = automationStore.list()
+                        .firstOrNull { it.name.equals(name, true) }
+                    val plan = lastPlan
+
+                    when {
+                        existing == null -> {
+                            val message = "यह सेव रूटीन नहीं मिली।"
+                            status.text = message
+                            tts.speak(message)
+                        }
+                        plan == null -> {
+                            val message = "पहले नया काम बोलिए, फिर रूटीन अपडेट कहिए।"
+                            status.text = message
+                            tts.speak(message)
+                        }
+                        else -> {
+                            android.app.AlertDialog.Builder(this@MainActivity)
+                                .setTitle("रूटीन अपडेट करें?")
+                                .setMessage("$name की पुरानी instructions नई बोली गई instructions से बदलें?")
+                                .setNegativeButton("रहने दें", null)
+                                .setPositiveButton("अपडेट करें") { _, _ ->
+                                    val ok = automationStore.save(
+                                        existing.name,
+                                        PlanValidator.encode(plan)
+                                    )
+                                    val message = if (ok) {
+                                        "$name रूटीन अपडेट हो गई। इसे चलाने के लिए अलग से बोलें।"
+                                    } else {
+                                        "रूटीन अपडेट नहीं हो सकी।"
+                                    }
+                                    status.text = message
+                                    tts.speak(message)
+                                }
+                                .show()
+                        }
+                    }
                     true
                 }
 
@@ -333,7 +413,8 @@ class MainActivity : Activity() {
                             .setNegativeButton("रहने दें", null)
                             .setPositiveButton("हटाएँ") { _, _ ->
                                 val ok = automationStore.delete(routine.id)
-                                val message = if (ok) "रूटीन हटा दी गई।"
+                                if (ok) routineScheduler.cancel(routine.name)
+                                val message = if (ok) "रूटीन और उसका reminder हटा दिया गया।"
                                               else "रूटीन नहीं हट सकी।"
                                 status.text = message
                                 tts.speak(message)
