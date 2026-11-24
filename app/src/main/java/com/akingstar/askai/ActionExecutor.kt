@@ -11,11 +11,20 @@ import android.media.AudioManager
 import android.hardware.camera2.CameraManager
 import android.widget.Toast
 
+data class StepExecutionResult(
+    val index: Int,
+    val action: String,
+    val target: String,
+    val status: String,
+    val reason: String = ""
+)
+
 data class ExecutionSummary(
     val totalSteps: Int,
     val succeededSteps: Int,
     val failedSteps: Int,
-    val cancelledSteps: Int
+    val cancelledSteps: Int,
+    val stepResults: List<StepExecutionResult> = emptyList()
 )
 
 class ActionExecutor(private val context: Context, private val speak: (String) -> Unit) {
@@ -38,32 +47,79 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
     }
 
     fun execute(plan: ActionPlan, onComplete: (ExecutionSummary) -> Unit) {
-        executeAt(plan.steps, 0, 0, 0, 0, onComplete)
+        executeSelected(plan, plan.steps.indices.toList(), onComplete)
+    }
+
+    fun executeSelected(
+        plan: ActionPlan,
+        requestedIndices: List<Int>,
+        onComplete: (ExecutionSummary) -> Unit
+    ) {
+        val selectedIndices = requestedIndices
+            .filter { it in plan.steps.indices }
+            .distinct()
+            .sorted()
+        executeAt(
+            plan.steps,
+            selectedIndices,
+            0,
+            0,
+            0,
+            0,
+            mutableListOf(),
+            onComplete
+        )
     }
 
     private fun executeAt(
         steps: List<ActionStep>,
-        index: Int,
+        selectedIndices: List<Int>,
+        position: Int,
         succeeded: Int,
         failed: Int,
         cancelled: Int,
+        stepResults: MutableList<StepExecutionResult>,
         onComplete: (ExecutionSummary) -> Unit
     ) {
-        if (index >= steps.size) {
+        if (position >= selectedIndices.size) {
             onComplete(
                 ExecutionSummary(
-                    totalSteps = steps.size,
+                    totalSteps = selectedIndices.size,
                     succeededSteps = succeeded,
                     failedSteps = failed,
-                    cancelledSteps = cancelled
+                    cancelledSteps = cancelled,
+                    stepResults = stepResults.toList()
                 )
             )
             return
         }
 
-        val step = steps[index]
-        val sensitiveText = "${step.action} ${step.target} ${step.value}"
+        val originalIndex = selectedIndices[position]
+        val step = steps[originalIndex]
+        val next = { ok: Boolean, resultStatus: String, reason: String,
+                     nextSucceeded: Int, nextFailed: Int, nextCancelled: Int ->
+            stepResults.add(
+                StepExecutionResult(
+                    index = originalIndex,
+                    action = step.action,
+                    target = step.target,
+                    status = resultStatus,
+                    reason = reason
+                )
+            )
+            executeAt(
+                steps,
+                selectedIndices,
+                position + 1,
+                nextSucceeded,
+                nextFailed,
+                nextCancelled,
+                stepResults,
+                onComplete
+            )
+        }
 
+        val sensitiveText = "${step.action} ${step.target} ${step.value}"
         val appWarning = if (step.action == "open_app") {
             SafetyGate.warningForApp(step.target)
         } else null
@@ -72,41 +128,46 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
             SafetyGate.isNeverAllowedAction(step.action)
         ) {
             speak("सुरक्षा के लिए यह काम रोक दिया गया है।")
-            executeAt(steps, index + 1, succeeded, failed + 1, cancelled, onComplete)
+            next(false, "BLOCKED", "Safety policy blocked this action",
+                succeeded, failed + 1, cancelled)
             return
         }
 
         if (SafetyGate.needsConfirmation(step.action, step.target) || appWarning != null) {
             AlertDialog.Builder(context)
                 .setTitle("Ask AI — पुष्टि जरूरी")
-                .setMessage(appWarning ?: "क्या आप यह काम करना चाहते हैं?\\n${step.action}: ${step.target}")
+                .setMessage(appWarning ?: "क्या आप यह काम करना चाहते हैं?\n${step.action}: ${step.target}")
                 .setPositiveButton("हाँ, आगे बढ़ें") { _, _ ->
                     val ok = runStep(step)
-                    executeAt(
-                        steps, index + 1,
+                    next(
+                        ok,
+                        if (ok) "SUCCESS" else "FAILED",
+                        if (ok) "" else "The action could not be completed",
                         succeeded + if (ok) 1 else 0,
                         failed + if (ok) 0 else 1,
-                        cancelled,
-                        onComplete
+                        cancelled
                     )
                 }
                 .setNegativeButton("नहीं") { _, _ ->
                     speak("ठीक है जी, यह काम रद्द कर दिया।")
-                    executeAt(steps, index + 1, succeeded, failed, cancelled + 1, onComplete)
+                    next(false, "CANCELLED", "User declined confirmation",
+                        succeeded, failed, cancelled + 1)
                 }
                 .setOnCancelListener {
                     speak("काम रद्द कर दिया।")
-                    executeAt(steps, index + 1, succeeded, failed, cancelled + 1, onComplete)
+                    next(false, "CANCELLED", "Confirmation dialog dismissed",
+                        succeeded, failed, cancelled + 1)
                 }
                 .show()
         } else {
             val ok = runStep(step)
-            executeAt(
-                steps, index + 1,
+            next(
+                ok,
+                if (ok) "SUCCESS" else "FAILED",
+                if (ok) "" else "The action could not be completed",
                 succeeded + if (ok) 1 else 0,
                 failed + if (ok) 0 else 1,
-                cancelled,
-                onComplete
+                cancelled
             )
         }
     }

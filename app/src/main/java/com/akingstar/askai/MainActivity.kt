@@ -201,38 +201,75 @@ class MainActivity : Activity() {
                     val routine = automationStore.list()
                         .firstOrNull { it.name.equals(name, true) }
                     val plan = routine?.let { PlanValidator.parse(it.planJson) }
+
                     if (plan == null) {
                         val message = "यह रूटीन नहीं मिली।"
                         status.text = message
                         tts.speak(message)
                     } else {
-                        status.text = "$name रूटीन शुरू कर रहा हूँ।"
-                        tts.speak(
-                            if (isRetry) "जी, रूटीन दोबारा शुरू कर रहा हूँ।"
-                            else "जी, रूटीन शुरू कर रहा हूँ।"
-                        )
-                        automationHistory.record(
-                            name,
-                            if (isRetry) "RETRY_STARTED" else "STARTED"
-                        )
-                        executor.execute(plan) { result ->
-                            val finalStatus = when {
-                                result.failedSteps == 0 && result.cancelledSteps == 0 -> "SUCCESS"
-                                result.succeededSteps == 0 && result.failedSteps == 0 -> "CANCELLED"
-                                result.succeededSteps == 0 -> "FAILED"
-                                else -> "PARTIAL"
+                        val savedPlanJson = routine?.planJson.orEmpty()
+                        val retryIndices = if (isRetry) {
+                            automationHistory.latestFailedStepIndices(name, savedPlanJson)
+                        } else {
+                            plan.steps.indices.toList()
+                        }
+
+                        when {
+                            retryIndices == null -> {
+                                val message = "पिछला विस्तृत रिकॉर्ड नहीं मिला या रूटीन बदल गई है। पहले रूटीन चलाइए।"
+                                status.text = message
+                                tts.speak(message)
                             }
-                            automationHistory.record(name, finalStatus)
-                            val detail = "$name: $finalStatus (${result.succeededSteps}/${result.totalSteps})"
-                            status.text = detail
-                            tts.speak(
-                                when (finalStatus) {
-                                    "SUCCESS" -> "रूटीन पूरी हो गई।"
-                                    "CANCELLED" -> "रूटीन के कुछ काम रद्द किए गए।"
-                                    "FAILED" -> "रूटीन पूरी नहीं हो सकी।"
-                                    else -> "रूटीन आंशिक रूप से पूरी हुई।"
+                            retryIndices.isEmpty() -> {
+                                val message = "कोई retry योग्य failed काम नहीं है।"
+                                status.text = message
+                                tts.speak(message)
+                            }
+                            else -> {
+                                status.text = if (isRetry) {
+                                    "$name के failed काम दोबारा शुरू कर रहा हूँ।"
+                                } else {
+                                    "$name रूटीन शुरू कर रहा हूँ।"
                                 }
-                            )
+                                tts.speak(
+                                    if (isRetry) "जी, सिर्फ असफल काम दोबारा करने की कोशिश कर रहा हूँ।"
+                                    else "जी, रूटीन शुरू कर रहा हूँ।"
+                                )
+                                automationHistory.record(
+                                    name,
+                                    if (isRetry) "RETRY_STARTED" else "STARTED"
+                                )
+                                executor.executeSelected(plan, retryIndices) { result ->
+                                    val finalStatus = when {
+                                        result.failedSteps == 0 && result.cancelledSteps == 0 -> "SUCCESS"
+                                        result.succeededSteps == 0 && result.failedSteps == 0 -> "CANCELLED"
+                                        result.succeededSteps == 0 -> "FAILED"
+                                        else -> "PARTIAL"
+                                    }
+                                    automationHistory.recordDetailed(
+                                        name = name,
+                                        status = finalStatus,
+                                        planJson = savedPlanJson,
+                                        results = result.stepResults,
+                                        merge = isRetry
+                                    )
+                                    automationHistory.record(name, finalStatus)
+                                    val detail = "$name: $finalStatus (${result.succeededSteps}/${result.totalSteps})"
+                                    status.text = detail
+                                    tts.speak(
+                                        when (finalStatus) {
+                                            "SUCCESS" -> if (isRetry) {
+                                                "असफल कामों की retry पूरी हो गई।"
+                                            } else {
+                                                "रूटीन पूरी हो गई।"
+                                            }
+                                            "CANCELLED" -> "रूटीन के कुछ काम रद्द किए गए।"
+                                            "FAILED" -> "रूटीन पूरी नहीं हो सकी।"
+                                            else -> "रूटीन आंशिक रूप से पूरी हुई।"
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                     true
