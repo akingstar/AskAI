@@ -62,6 +62,7 @@ object RoutineConditionEvaluator {
 
             RoutineConditionType.PREVIOUS_STEP -> {
                 val status = snapshot.previousStepStatus ?: return null
+                if (status != "SUCCESS" && status != "FAILED") return null
                 when (condition.operator) {
                     RoutineConditionOperator.SUCCEEDED -> status == "SUCCESS"
                     RoutineConditionOperator.FAILED -> status == "FAILED"
