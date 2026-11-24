@@ -31,6 +31,39 @@ class ExecutionRecoveryPolicyTest {
         assertEquals(listOf(2), ExecutionRecoveryPolicy.retryableIndices(results, 3))
     }
 
+
+    @Test
+    fun interruptedOrPendingExecutionIsNotRecoverable() {
+        assertEquals(
+            false,
+            ExecutionRecoveryPolicy.isRecoverableRecord("RUNNING", emptyList())
+        )
+        assertEquals(
+            false,
+            ExecutionRecoveryPolicy.isRecoverableRecord("FAILED", listOf(2))
+        )
+        assertEquals(
+            false,
+            ExecutionRecoveryPolicy.isRecoverableRecord("PERSISTENCE_FAILED", emptyList())
+        )
+    }
+
+    @Test
+    fun cancelledExecutionCanRetryRemainingFailedSteps() {
+        assertEquals(
+            true,
+            ExecutionRecoveryPolicy.isRecoverableRecord("CANCELLED", emptyList())
+        )
+    }
+
+    @Test
+    fun completedExecutionWithNoPendingStepsIsRecoverable() {
+        assertEquals(
+            true,
+            ExecutionRecoveryPolicy.isRecoverableRecord("PARTIAL", emptyList())
+        )
+    }
+
     @Test
     fun emptyPlanHasNoRetryableSteps() {
         assertEquals(

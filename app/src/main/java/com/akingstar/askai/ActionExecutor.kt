@@ -47,12 +47,13 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
     }
 
     fun execute(plan: ActionPlan, onComplete: (ExecutionSummary) -> Unit) {
-        executeSelected(plan, plan.steps.indices.toList(), onComplete)
+        executeSelected(plan, plan.steps.indices.toList(), onComplete = onComplete)
     }
 
     fun executeSelected(
         plan: ActionPlan,
         requestedIndices: List<Int>,
+        onStepResult: (StepExecutionResult) -> Boolean = { true },
         onComplete: (ExecutionSummary) -> Unit
     ) {
         val selectedIndices = requestedIndices
@@ -67,6 +68,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
             0,
             0,
             mutableListOf(),
+            onStepResult,
             onComplete
         )
     }
@@ -79,6 +81,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
         failed: Int,
         cancelled: Int,
         stepResults: MutableList<StepExecutionResult>,
+        onStepResult: (StepExecutionResult) -> Boolean,
         onComplete: (ExecutionSummary) -> Unit
     ) {
         if (position >= selectedIndices.size) {
@@ -98,25 +101,43 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
         val step = steps[originalIndex]
         val next = { ok: Boolean, resultStatus: String, reason: String,
                      nextSucceeded: Int, nextFailed: Int, nextCancelled: Int ->
-            stepResults.add(
-                StepExecutionResult(
-                    index = originalIndex,
-                    action = step.action,
-                    target = step.target,
-                    status = resultStatus,
-                    reason = reason
+            val stepResult = StepExecutionResult(
+                index = originalIndex,
+                action = step.action,
+                target = step.target,
+                status = resultStatus,
+                reason = reason
+            )
+            if (!onStepResult(stepResult)) {
+                stepResults.add(
+                    stepResult.copy(
+                        status = "FAILED",
+                        reason = "Execution result could not be saved; stopped safely"
+                    )
                 )
-            )
-            executeAt(
-                steps,
-                selectedIndices,
-                position + 1,
-                nextSucceeded,
-                nextFailed,
-                nextCancelled,
-                stepResults,
-                onComplete
-            )
+                onComplete(
+                    ExecutionSummary(
+                        totalSteps = selectedIndices.size,
+                        succeededSteps = nextSucceeded,
+                        failedSteps = nextFailed + 1,
+                        cancelledSteps = nextCancelled,
+                        stepResults = stepResults.toList()
+                    )
+                )
+            } else {
+                stepResults.add(stepResult)
+                executeAt(
+                    steps,
+                    selectedIndices,
+                    position + 1,
+                    nextSucceeded,
+                    nextFailed,
+                    nextCancelled,
+                    stepResults,
+                    onStepResult,
+                    onComplete
+                )
+            }
         }
 
         val sensitiveText = "${step.action} ${step.target} ${step.value}"

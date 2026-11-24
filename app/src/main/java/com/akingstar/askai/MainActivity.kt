@@ -235,37 +235,61 @@ class MainActivity : Activity() {
                                     if (isRetry) "जी, सिर्फ असफल काम दोबारा करने की कोशिश कर रहा हूँ।"
                                     else "जी, रूटीन शुरू कर रहा हूँ।"
                                 )
-                                automationHistory.record(
-                                    name,
-                                    if (isRetry) "RETRY_STARTED" else "STARTED"
+                                val started = automationHistory.beginExecution(
+                                    name = name,
+                                    planJson = savedPlanJson,
+                                    selectedIndices = retryIndices,
+                                    merge = isRetry
                                 )
-                                executor.executeSelected(plan, retryIndices) { result ->
-                                    val finalStatus = when {
-                                        result.failedSteps == 0 && result.cancelledSteps == 0 -> "SUCCESS"
-                                        result.succeededSteps == 0 && result.failedSteps == 0 -> "CANCELLED"
-                                        result.succeededSteps == 0 -> "FAILED"
-                                        else -> "PARTIAL"
-                                    }
-                                    automationHistory.recordDetailed(
-                                        name = name,
-                                        status = finalStatus,
-                                        planJson = savedPlanJson,
-                                        results = result.stepResults,
-                                        merge = isRetry
+                                if (!started) {
+                                    val message = "Execution record सुरक्षित नहीं हो सका। कोई काम शुरू नहीं किया गया।"
+                                    status.text = message
+                                    tts.speak(message)
+                                } else {
+                                    automationHistory.record(
+                                        name,
+                                        if (isRetry) "RETRY_STARTED" else "STARTED"
                                     )
-                                    automationHistory.record(name, finalStatus)
-                                    val detail = "$name: $finalStatus (${result.succeededSteps}/${result.totalSteps})"
-                                    status.text = detail
-                                    tts.speak(
-                                        when (finalStatus) {
-                                            "SUCCESS" -> if (isRetry) {
-                                                "असफल कामों की retry पूरी हो गई।"
-                                            } else {
-                                                "रूटीन पूरी हो गई।"
+                                    executor.executeSelected(
+                                        plan = plan,
+                                        requestedIndices = retryIndices,
+                                        onStepResult = { stepResult ->
+                                            automationHistory.recordStep(
+                                                name, savedPlanJson, stepResult
+                                            )
+                                        },
+                                        onComplete = { result ->
+                                            val finalStatus = when {
+                                                result.failedSteps == 0 && result.cancelledSteps == 0 -> "SUCCESS"
+                                                result.succeededSteps == 0 && result.failedSteps == 0 -> "CANCELLED"
+                                                result.succeededSteps == 0 -> "FAILED"
+                                                else -> "PARTIAL"
                                             }
-                                            "CANCELLED" -> "रूटीन के कुछ काम रद्द किए गए।"
-                                            "FAILED" -> "रूटीन पूरी नहीं हो सकी।"
-                                            else -> "रूटीन आंशिक रूप से पूरी हुई।"
+                                            val saved = automationHistory.finishExecution(finalStatus)
+                                            automationHistory.record(
+                                                name,
+                                                if (saved) finalStatus else "PERSISTENCE_FAILED"
+                                            )
+                                            val detail = if (saved) {
+                                                "$name: $finalStatus (${result.succeededSteps}/${result.totalSteps})"
+                                            } else {
+                                                "$name: परिणाम सुरक्षित नहीं हो सके। दोबारा retry करने से पहले जाँच जरूरी है।"
+                                            }
+                                            status.text = detail
+                                            tts.speak(
+                                                if (!saved) {
+                                                    "काम पूरे हुए, लेकिन उनका रिकॉर्ड सुरक्षित नहीं हो सका।"
+                                                } else when (finalStatus) {
+                                                    "SUCCESS" -> if (isRetry) {
+                                                        "असफल कामों की retry पूरी हो गई।"
+                                                    } else {
+                                                        "रूटीन पूरी हो गई।"
+                                                    }
+                                                    "CANCELLED" -> "रूटीन के कुछ काम रद्द किए गए।"
+                                                    "FAILED" -> "रूटीन पूरी नहीं हो सकी।"
+                                                    else -> "रूटीन आंशिक रूप से पूरी हुई।"
+                                                }
+                                            )
                                         }
                                     )
                                 }

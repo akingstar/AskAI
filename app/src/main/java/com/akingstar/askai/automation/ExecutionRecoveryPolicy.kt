@@ -3,6 +3,11 @@ package com.akingstar.askai.automation
 import com.akingstar.askai.StepExecutionResult
 
 object ExecutionRecoveryPolicy {
+    fun isRecoverableRecord(status: String, pendingIndices: List<Int>): Boolean {
+        return status in setOf("SUCCESS", "PARTIAL", "FAILED", "CANCELLED") &&
+            pendingIndices.isEmpty()
+    }
+
     fun retryableIndices(
         results: List<StepExecutionResult>,
         planSize: Int
