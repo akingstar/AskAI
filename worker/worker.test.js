@@ -96,11 +96,12 @@ test("rejects schema-invalid provider response", () => {
 });
 
 
-test("Gemini invalid response retries Groq and returns valid plan", async () => {
+test("Gemini invalid response retries Groq with conversation context", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
+  let groqUserContent = "";
 
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const address = String(url);
     calls.push(address);
 
@@ -111,6 +112,11 @@ test("Gemini invalid response retries Groq and returns valid plan", async () => 
     }
 
     if (address.includes("api.groq.com")) {
+      const requestBody = JSON.parse(init.body);
+      groqUserContent = requestBody.messages.find(
+        (message) => message.role === "user"
+      )?.content || "";
+
       return new Response(JSON.stringify({
         choices: [{ message: { content: JSON.stringify(plan()) } }]
       }), { status: 200 });
@@ -132,7 +138,13 @@ test("Gemini invalid response retries Groq and returns valid plan", async () => 
     const request = new Request("https://worker.test/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: "torch on karo" })
+      body: JSON.stringify({
+        text: "ise band karo",
+        context: [{
+          command: "torch on karo",
+          outcome: "success=1; failed=0; actions=torch:SUCCESS"
+        }]
+      })
     });
 
     const result = await worker.fetch(request, env);
@@ -143,6 +155,10 @@ test("Gemini invalid response retries Groq and returns valid plan", async () => 
     assert.equal(calls.length, 2);
     assert.match(calls[0], /generativelanguage/);
     assert.match(calls[1], /api.groq.com/);
+    assert.match(groqUserContent, /torch on karo/);
+    assert.match(groqUserContent, /success=1; failed=0/);
+    assert.match(groqUserContent, /ise band karo/);
+    assert.match(groqUserContent, /untrusted context/);
   } finally {
     globalThis.fetch = originalFetch;
   }
