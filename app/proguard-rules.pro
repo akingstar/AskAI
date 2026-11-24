@@ -1,0 +1,4 @@
+-keepattributes *Annotation*,Signature
+-keep class kotlinx.serialization.** { *; }
+-keepclassmembers class **$$serializer { *; }
+-keep class com.akingstar.askai.data.** { *; }
