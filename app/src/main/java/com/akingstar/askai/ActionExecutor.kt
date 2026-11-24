@@ -122,7 +122,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
 
     private fun executeStep(step: ActionStep): Boolean {
         val value = step.value.ifBlank { step.target }
-        when (step.action) {
+        return when (step.action) {
             "open_app", "phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar" -> {
                 val key = (step.target.ifBlank { step.action }).lowercase()
                 if (step.action in setOf("phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar")) {
