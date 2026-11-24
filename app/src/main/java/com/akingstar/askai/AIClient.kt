@@ -40,7 +40,7 @@ object AIClient {
         return output.toString("UTF-8")
     }
 
-    fun request(context: Context, text: String, callback: (AIRequestResult) -> Unit) {
+    internal fun request(context: Context, text: String, callback: (AIRequestResult) -> Unit) {
         val prefs = context.getSharedPreferences("askai", Context.MODE_PRIVATE)
         val endpoint = prefs.getString("worker_url", "").orEmpty().trim()
 
