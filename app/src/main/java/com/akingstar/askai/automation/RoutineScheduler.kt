@@ -106,6 +106,54 @@ class RoutineScheduler(context: Context) {
         }.getOrDefault(false)
     }
 
+    fun listScheduled(
+        routines: List<SavedRoutine>,
+        onResult: (String) -> Unit
+    ) {
+        Thread({
+            val lines = mutableListOf<String>()
+
+            routines.take(50).forEach { routine ->
+                val candidates = listOf(
+                    "एक बार" to RoutineWorkNames.oneTime(routine.name),
+                    "दोहराने वाला" to RoutineWorkNames.recurring(routine.name),
+                    "पुराना" to RoutineWorkNames.legacy(routine.name)
+                )
+
+                candidates.forEach { (label, uniqueName) ->
+                    val infos = runCatching {
+                        work.getWorkInfosForUniqueWork(uniqueName)
+                            .get(2, TimeUnit.SECONDS)
+                    }.getOrDefault(emptyList())
+
+                    infos.filter {
+                        it.state == androidx.work.WorkInfo.State.ENQUEUED ||
+                            it.state == androidx.work.WorkInfo.State.RUNNING ||
+                            it.state == androidx.work.WorkInfo.State.BLOCKED
+                    }.forEach { info ->
+                        val state = when (info.state) {
+                            androidx.work.WorkInfo.State.ENQUEUED -> "आने वाला"
+                            androidx.work.WorkInfo.State.RUNNING -> "चल रहा है"
+                            androidx.work.WorkInfo.State.BLOCKED -> "रुका हुआ"
+                            else -> info.state.name
+                        }
+                        lines.add("${routine.name} — $label — $state")
+                    }
+                }
+            }
+
+            val result = if (lines.isEmpty()) {
+                "अभी कोई pending routine reminder नहीं है।"
+            } else {
+                "Scheduled reminders:\\n" + lines.joinToString("\\n")
+            }
+            onResult(result)
+        }, "AskAI-Reminder-Status").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
     fun cancel(name: String): Boolean {
         val clean = name.trim()
         if (!RoutineSchedulePolicy.isValidName(clean)) return false
