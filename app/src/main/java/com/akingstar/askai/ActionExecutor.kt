@@ -1,0 +1,169 @@
+package com.akingstar.askai
+
+import android.app.AlertDialog
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.AlarmClock
+import android.provider.Settings
+import android.media.AudioManager
+import android.hardware.camera2.CameraManager
+import android.widget.Toast
+
+class ActionExecutor(private val context: Context, private val speak: (String) -> Unit) {
+    private val packages = mapOf(
+        "youtube" to "com.google.android.youtube",
+        "maps" to "com.google.android.apps.maps",
+        "chrome" to "com.android.chrome",
+        "phonepe" to "com.phonepe.app",
+        "paytm" to "net.one97.paytm",
+        "gpay" to "com.google.android.apps.nbu.paisa.user",
+        "irctc" to "cris.org.in.prs.ima",
+        "jio" to "com.jio.myjio",
+        "airtel" to "com.myairtelapp",
+        "hotstar" to "in.startv.hotstar",
+        "whatsapp" to "com.whatsapp"
+    )
+
+    fun execute(plan: ActionPlan) {
+        executeAt(plan.steps, 0)
+    }
+
+    private fun executeAt(steps: List<ActionStep>, index: Int) {
+        if (index >= steps.size) return
+        val step = steps[index]
+        val sensitiveText = "${step.action} ${step.target} ${step.value}"
+
+        if (SafetyGate.blocked(sensitiveText)) {
+            speak("सुरक्षा के लिए यह काम रोक दिया गया है।")
+            executeAt(steps, index + 1)
+            return
+        }
+
+        if (SafetyGate.needsConfirmation(step.action, step.target)) {
+            AlertDialog.Builder(context)
+                .setTitle("Ask AI — पुष्टि जरूरी")
+                .setMessage("क्या आप यह काम करना चाहते हैं?\\n${step.action}: ${step.target}")
+                .setPositiveButton("हाँ, आगे बढ़ें") { _, _ ->
+                    runStep(step)
+                    executeAt(steps, index + 1)
+                }
+                .setNegativeButton("नहीं") { _, _ ->
+                    speak("ठीक है जी, यह काम रद्द कर दिया।")
+                    executeAt(steps, index + 1)
+                }
+                .setOnCancelListener {
+                    speak("काम रद्द कर दिया।")
+                    executeAt(steps, index + 1)
+                }
+                .show()
+        } else {
+            runStep(step)
+            executeAt(steps, index + 1)
+        }
+    }
+
+    private fun runStep(step: ActionStep) {
+        try {
+            executeStep(step)
+        } catch (_: Exception) {
+            speak("यह काम इस फोन पर पूरा नहीं हो सका।")
+        }
+    }
+
+    private fun executeStep(step: ActionStep) {
+        val value = step.value.ifBlank { step.target }
+        when (step.action) {
+            "open_app", "phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar" -> {
+                val key = (step.target.ifBlank { step.action }).lowercase()
+                if (step.action in setOf("phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar")) {
+                    openPackage(packages[step.action] ?: "")
+                } else {
+                    val match = packages.entries.firstOrNull { key.contains(it.key) || it.key.contains(key) }
+                    if (match != null) openPackage(match.value)
+                    else {
+                        val launch = context.packageManager.getInstalledApplications(0)
+                            .firstOrNull { it.loadLabel(context.packageManager).toString().contains(key, true) }
+                        if (launch != null) context.packageManager.getLaunchIntentForPackage(launch.packageName)?.let {
+                            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); context.startActivity(it)
+                        } else speak("यह ऐप नहीं मिला।")
+                    }
+                }
+            }
+            "torch" -> torch(true)
+            "torch_off" -> torch(false)
+            "volume_up" -> audio().adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            "volume_down" -> audio().adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            "camera", "selfie" -> openIntent(Intent(MediaStoreIntent).apply {
+                putExtra("android.intent.extras.CAMERA_FACING", if (step.action == "selfie") 1 else 0)
+            })
+            "gallery" -> openIntent(Intent(Intent.ACTION_VIEW, Uri.parse("content://media/internal/images/media")))
+            "wifi_settings" -> openIntent(Intent(Settings.Panel.ACTION_WIFI))
+            "bluetooth_settings" -> openIntent(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            "mobile_settings" -> openIntent(Intent(Settings.ACTION_DATA_ROAMING_SETTINGS))
+            "hotspot_settings" -> openIntent(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+            "airplane_settings" -> openIntent(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS))
+            "location_settings" -> openIntent(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            "dnd" -> openIntent(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+            "ringer" -> openIntent(Intent(Settings.ACTION_SOUND_SETTINGS))
+            "rotation" -> openIntent(Intent(Settings.ACTION_DISPLAY_SETTINGS))
+            "brightness" -> openIntent(Intent(Settings.ACTION_DISPLAY_SETTINGS))
+            "alarm" -> openIntent(Intent(AlarmClock.ACTION_SET_ALARM))
+            "timer" -> openIntent(Intent(AlarmClock.ACTION_SET_TIMER))
+            "youtube" -> {
+                val openOnly = value.equals("youtube", true) ||
+                    value.lowercase() in setOf("यूट्यूब", "यूट्यूब खोलो", "youtube kholo", "open youtube")
+                if (openOnly) openPackage(packages["youtube"]!!)
+                else openIntent(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(value)}")))
+            }
+            "web" -> openIntent(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(value)}")))
+            "maps" -> {
+                val openOnly = value.equals("maps", true) ||
+                    value.lowercase() in setOf("मैप खोलो", "गूगल मैप खोलो", "maps kholo", "open maps", "google maps kholo")
+                if (openOnly) openPackage(packages["maps"]!!)
+                else openIntent(Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=${Uri.encode(value)}")))
+            }
+            "music" -> openIntent(Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/")))
+            "time", "date" -> speak(java.text.DateFormat.getDateTimeInstance().format(java.util.Date()))
+            "battery" -> {
+                val b = context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val level = b?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                speak("बैटरी $level प्रतिशत है।")
+            }
+            "storage" -> {
+                val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+                speak("खाली जगह ${stat.availableBytes / (1024 * 1024)} MB है।")
+            }
+            "network" -> openIntent(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+            "location" -> openIntent(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            else -> speak("यह कमांड अभी उपलब्ध नहीं है।")
+        }
+    }
+
+    private fun openPackage(pkg: String) {
+        if (pkg.isBlank()) return
+        val i = context.packageManager.getLaunchIntentForPackage(pkg)
+        if (i == null) speak("ऐप इंस्टॉल नहीं है।") else {
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        }
+    }
+
+    private fun openIntent(i: Intent) {
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(i)
+    }
+
+    private fun audio() = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private fun torch(on: Boolean) {
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val id = manager.cameraIdList.firstOrNull { manager.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
+        if (id == null) speak("इस फोन में फ्लैश उपलब्ध नहीं है।") else manager.setTorchMode(id, on)
+    }
+
+    companion object {
+        const val MediaStoreIntent = "android.media.action.IMAGE_CAPTURE"
+    }
+}

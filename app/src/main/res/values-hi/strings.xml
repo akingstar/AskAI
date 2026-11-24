@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">आस्क एआई</string>
+    <string name="tagline">बोलो, हो जाएगा</string>
+    <string name="mic">बोलिए</string>
+    <string name="status_ready">मैं आपकी मदद के लिए तैयार हूँ।</string>
+    <string name="language">भाषा / Language</string>
+    <string name="check_permissions">फिर जाँचें</string>
+    <string name="permissions_title">आवश्यक अनुमतियाँ</string>
+    <string name="worker_url">AI Worker URL (वैकल्पिक)</string>
+</resources>

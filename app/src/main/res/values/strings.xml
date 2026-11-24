@@ -1,1 +1,10 @@
-<resources><string name="app_name">Ask AI</string><string name="accessibility_description">Ask AI screen reading and permitted actions</string></resources>
+<resources>
+    <string name="app_name">Ask AI</string>
+    <string name="tagline">Bolo, ho jayega</string>
+    <string name="mic">बोलिए</string>
+    <string name="status_ready">मैं आपकी मदद के लिए तैयार हूँ।</string>
+    <string name="language">भाषा / Language</string>
+    <string name="check_permissions">Check again</string>
+    <string name="permissions_title">आवश्यक अनुमतियाँ</string>
+    <string name="worker_url">AI Worker URL (optional)</string>
+</resources>
