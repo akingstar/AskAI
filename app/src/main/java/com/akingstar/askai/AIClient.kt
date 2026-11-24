@@ -40,7 +40,12 @@ object AIClient {
         return output.toString("UTF-8")
     }
 
-    internal fun request(context: Context, text: String, callback: (AIRequestResult) -> Unit) {
+    internal fun request(
+        context: Context,
+        text: String,
+        conversation: List<ConversationTurn> = emptyList(),
+        callback: (AIRequestResult) -> Unit
+    ) {
         val prefs = context.getSharedPreferences("askai", Context.MODE_PRIVATE)
         val endpoint = prefs.getString("worker_url", "").orEmpty().trim()
 
@@ -77,9 +82,19 @@ object AIClient {
                         connection.setRequestProperty("Content-Type", "application/json")
                         connection.setRequestProperty("Accept", "application/json")
 
+                        val contextArray = org.json.JSONArray()
+                        conversation.takeLast(3).forEach { turn ->
+                            contextArray.put(
+                                JSONObject()
+                                    .put("command", turn.command)
+                                    .put("outcome", turn.outcome)
+                            )
+                        }
+
                         val body = JSONObject()
                             .put("text", text)
                             .put("system", SYSTEM_PROMPT)
+                            .put("context", contextArray)
                             .toString()
 
                         connection.outputStream.use {

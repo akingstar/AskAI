@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private lateinit var speech: SpeechController
     private lateinit var tts: TextToSpeechController
     private lateinit var executor: ActionExecutor
+    private val conversationMemory = ConversationMemory()
     private val permissions = arrayListOf(
         Manifest.permission.RECORD_AUDIO
     )
@@ -432,7 +433,7 @@ class MainActivity : Activity() {
             }
 
             if (!handled) {
-                AIClient.request(this@MainActivity, heard) { result ->
+                AIClient.request(this@MainActivity, heard, conversationMemory.snapshot()) { result ->
                     if (isFinishing || isDestroyed) return@request
                     when (result) {
                         is AIRequestResult.Success -> {
@@ -444,7 +445,11 @@ class MainActivity : Activity() {
                                 "कमांड मिली: ${plan.steps.size} काम"
                             }
                             tts.speak("जी, समझ गया।")
-                            executor.execute(plan)
+                            executor.execute(plan) { summary ->
+                                if (!result.offline && !isFinishing && !isDestroyed) {
+                                    conversationMemory.record(heard, summary)
+                                }
+                            }
                         }
 
                         AIRequestResult.UnrecognizedCommand -> {

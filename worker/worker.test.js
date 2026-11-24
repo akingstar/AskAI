@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { validatePlan, serializeValidPlan } from "./worker.js";
+import worker, { validatePlan, serializeValidPlan, validateConversationContext } from "./worker.js";
 
 const step = (extra = {}) => ({
   action: "torch", target: "", value: "", ...extra
@@ -143,6 +143,67 @@ test("Gemini invalid response retries Groq and returns valid plan", async () => 
     assert.equal(calls.length, 2);
     assert.match(calls[0], /generativelanguage/);
     assert.match(calls[1], /api.groq.com/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("validates bounded conversation context", () => {
+  assert.equal(validateConversationContext([]), true);
+  assert.equal(validateConversationContext([
+    { command: "torch on karo", outcome: "success=1; failed=0" }
+  ]), true);
+});
+
+test("rejects invalid conversation context", () => {
+  assert.equal(validateConversationContext(null), false);
+  assert.equal(validateConversationContext([{}]), false);
+  assert.equal(validateConversationContext([
+    { command: "x".repeat(241), outcome: "ok" }
+  ]), false);
+  assert.equal(validateConversationContext([
+    { command: "hello", outcome: "x".repeat(181) }
+  ]), false);
+  assert.equal(validateConversationContext([
+    { command: "hello", outcome: "ok", extra: true }
+  ]), false);
+  assert.equal(validateConversationContext(
+    Array.from({ length: 4 }, () => ({ command: "a", outcome: "b" }))
+  ), false);
+});
+
+test("passes validated conversation context to Gemini", async () => {
+  const originalFetch = globalThis.fetch;
+  let providerPrompt = "";
+
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    providerPrompt = request.contents[0].parts[0].text;
+    return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify(plan()) }] } }]
+    }), { status: 200 });
+  };
+
+  try {
+    const env = {
+      GEMINI_API_KEY: "test-key",
+      RATE_LIMIT: { get: async () => null, put: async () => {} }
+    };
+    const request = new Request("https://worker.test/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: "ise band karo",
+        context: [{ command: "torch on karo", outcome: "success=1; failed=0" }]
+      })
+    });
+
+    const result = await worker.fetch(request, env);
+    assert.equal(result.status, 200);
+    assert.match(providerPrompt, /torch on karo/);
+    assert.match(providerPrompt, /ise band karo/);
+    assert.match(providerPrompt, /untrusted context/);
   } finally {
     globalThis.fetch = originalFetch;
   }
