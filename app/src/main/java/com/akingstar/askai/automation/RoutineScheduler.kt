@@ -3,7 +3,9 @@ package com.akingstar.askai.automation
 import android.content.Context
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder\nimport androidx.work.PeriodicWorkRequestBuilder\nimport androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
