@@ -46,7 +46,7 @@ class PlanValidatorTest {
     }
 
     @Test fun rejectsControlCharacters() {
-        val p = """{"language":"hi-IN","steps":[{"action":"torch","target":"\\u0001","value":""}]}"""
+        val p = """{"language":"hi-IN","steps":[{"action":"torch","target":"\u0001","value":""}]}"""
         assertNull(PlanValidator.parse(p))
     }
 
