@@ -1,5 +1,7 @@
 package com.akingstar.askai
 
+import com.akingstar.askai.automation.AutomationStore
+
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -37,16 +39,112 @@ class MainActivity : Activity() {
         spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, languages.map { it.first })
         tts = TextToSpeechController(this) {}
         executor = ActionExecutor(this) { tts.speak(it) }
+        val automationStore = AutomationStore(this)
+        var lastPlan: ActionPlan? = null
+
         speech = SpeechController(this, { heard ->
             status.text = "आपने कहा: $heard"
-            AIClient.request(this, heard) { plan ->
-                if (plan == null) {
-                    status.text = "कमांड समझ नहीं आई।"
-                    tts.speak("माफ कीजिए, मैं समझ नहीं पाया।")
-                } else {
-                    status.text = "कमांड मिली: ${plan.steps.size} काम"
-                    tts.speak("जी, समझ गया।")
-                    executor.execute(plan)
+            val command = heard.trim()
+            val saveMatch = Regex(
+                "^(?:routine|रूटीन)\\s+(?:save|सेव(?:\\s+करो)?)\\s+(.+)$",
+                RegexOption.IGNORE_CASE
+            ).find(command)
+            val runMatch = Regex(
+                "^(?:routine|रूटीन)\\s+(?:run|chalao|चलाओ)\\s+(.+)$",
+                RegexOption.IGNORE_CASE
+            ).find(command)
+            val deleteMatch = Regex(
+                "^(?:routine|रूटीन)\\s+(?:delete|हटाओ|मिटाओ)\\s+(.+)$",
+                RegexOption.IGNORE_CASE
+            ).find(command)
+
+            val handled = when {
+                command.matches(Regex(
+                    "^(?:meri\\s+)?(?:routines|routine list|रूटीन(?:\\s+दिखाओ)?)$",
+                    RegexOption.IGNORE_CASE
+                )) || command.equals("मेरी रूटीन दिखाओ", true) -> {
+                    val items = automationStore.list()
+                    val message = if (items.isEmpty()) {
+                        "अभी कोई रूटीन सेव नहीं है।"
+                    } else {
+                        "आपकी सेव रूटीन हैं: " +
+                            items.joinToString("، ") { it.name }
+                    }
+                    status.text = message
+                    tts.speak(message)
+                    true
+                }
+
+                saveMatch != null -> {
+                    val plan = lastPlan
+                    val name = saveMatch.groupValues[1].trim()
+                    val ok = plan != null &&
+                        automationStore.save(name, PlanValidator.encode(plan))
+                    val message = when {
+                        plan == null -> "पहले कोई काम बोलकर करवाइए, फिर रूटीन सेव कीजिए।"
+                        ok -> "$name रूटीन सेव हो गई।"
+                        else -> "रूटीन सेव नहीं हो सकी। नाम या कमांड जाँचिए।"
+                    }
+                    status.text = message
+                    tts.speak(message)
+                    true
+                }
+
+                runMatch != null -> {
+                    val name = runMatch.groupValues[1].trim()
+                    val routine = automationStore.list()
+                        .firstOrNull { it.name.equals(name, true) }
+                    val plan = routine?.let { PlanValidator.parse(it.planJson) }
+                    if (plan == null) {
+                        val message = "यह रूटीन नहीं मिली।"
+                        status.text = message
+                        tts.speak(message)
+                    } else {
+                        status.text = "$name रूटीन शुरू कर रहा हूँ।"
+                        tts.speak("जी, रूटीन शुरू कर रहा हूँ।")
+                        executor.execute(plan)
+                    }
+                    true
+                }
+
+                deleteMatch != null -> {
+                    val name = deleteMatch.groupValues[1].trim()
+                    val routine = automationStore.list()
+                        .firstOrNull { it.name.equals(name, true) }
+                    if (routine == null) {
+                        status.text = "यह रूटीन नहीं मिली।"
+                        tts.speak("यह रूटीन नहीं मिली।")
+                    } else {
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle("रूटीन हटाएँ?")
+                            .setMessage("$name रूटीन हमेशा के लिए हट जाएगी।")
+                            .setNegativeButton("रहने दें", null)
+                            .setPositiveButton("हटाएँ") { _, _ ->
+                                val ok = automationStore.delete(routine.id)
+                                val message = if (ok) "रूटीन हटा दी गई।"
+                                              else "रूटीन नहीं हट सकी।"
+                                status.text = message
+                                tts.speak(message)
+                            }
+                            .show()
+                    }
+                    true
+                }
+
+                else -> false
+            }
+
+            if (!handled) {
+                AIClient.request(this@MainActivity, heard) { plan ->
+                    if (plan == null) {
+                        status.text = "कमांड समझ नहीं आई।"
+                        tts.speak("माफ कीजिए, मैं समझ नहीं पाया।")
+                    } else {
+                        lastPlan = plan
+                        status.text = "कमांड मिली: ${plan.steps.size} काम"
+                        tts.speak("जी, समझ गया।")
+                        executor.execute(plan)
+                    }
                 }
             }
         }, { status.text = it })
