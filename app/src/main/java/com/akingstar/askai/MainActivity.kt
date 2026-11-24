@@ -57,6 +57,10 @@ class MainActivity : Activity() {
                 "^(?:routine|रूटीन)\\s+(?:run|chalao|चलाओ)\\s+(.+)$",
                 RegexOption.IGNORE_CASE
             ).find(command)
+            val retryMatch = Regex(
+                "^(?:routine|रूटीन)\\s+(?:retry|दोबारा|फिर से)\\s+(.+)$",
+                RegexOption.IGNORE_CASE
+            ).find(command)
             val deleteMatch = Regex(
                 "^(?:routine|रूटीन)\\s+(?:delete|हटाओ|मिटाओ)\\s+(.+)$",
                 RegexOption.IGNORE_CASE
@@ -132,6 +136,25 @@ class MainActivity : Activity() {
 
 
                 command.matches(Regex(
+                    "^(?:routine history clear|रूटीन हिस्ट्री साफ करो|रूटीन इतिहास मिटाओ)$",
+                    RegexOption.IGNORE_CASE
+                )) -> {
+                    android.app.AlertDialog.Builder(this@MainActivity)
+                        .setTitle("हिस्ट्री साफ करें?")
+                        .setMessage("रूटीन की पूरी execution history हट जाएगी।")
+                        .setNegativeButton("रहने दें", null)
+                        .setPositiveButton("साफ करें") { _, _ ->
+                            val ok = automationHistory.clear()
+                            val message = if (ok) "रूटीन हिस्ट्री साफ हो गई।"
+                                          else "हिस्ट्री साफ नहीं हो सकी।"
+                            status.text = message
+                            tts.speak(message)
+                        }
+                        .show()
+                    true
+                }
+
+                command.matches(Regex(
                     "^(?:routine history|रूटीन हिस्ट्री|रूटीन इतिहास)$",
                     RegexOption.IGNORE_CASE
                 )) -> {
@@ -172,8 +195,9 @@ class MainActivity : Activity() {
                     true
                 }
 
-                runMatch != null -> {
-                    val name = runMatch.groupValues[1].trim()
+                runMatch != null || retryMatch != null -> {
+                    val isRetry = retryMatch != null
+                    val name = (runMatch ?: retryMatch!!).groupValues[1].trim()
                     val routine = automationStore.list()
                         .firstOrNull { it.name.equals(name, true) }
                     val plan = routine?.let { PlanValidator.parse(it.planJson) }
@@ -183,7 +207,14 @@ class MainActivity : Activity() {
                         tts.speak(message)
                     } else {
                         status.text = "$name रूटीन शुरू कर रहा हूँ।"
-                        tts.speak("जी, रूटीन शुरू कर रहा हूँ।")
+                        tts.speak(
+                            if (isRetry) "जी, रूटीन दोबारा शुरू कर रहा हूँ।"
+                            else "जी, रूटीन शुरू कर रहा हूँ।"
+                        )
+                        automationHistory.record(
+                            name,
+                            if (isRetry) "RETRY_STARTED" else "STARTED"
+                        )
                         executor.execute(plan) { result ->
                             val finalStatus = when {
                                 result.failedSteps == 0 && result.cancelledSteps == 0 -> "SUCCESS"

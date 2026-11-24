@@ -26,6 +26,11 @@ class AutomationHistoryStore(context: Context) {
     }.getOrDefault(false)
 
     @Synchronized
+    fun clear(): Boolean = runCatching {
+        prefs.edit().putString("history", "[]").commit()
+    }.getOrDefault(false)
+
+    @Synchronized
     fun summary(): String = runCatching {
         val array = JSONArray(prefs.getString("history", "[]") ?: "[]")
         if (array.length() == 0) return "अभी कोई रूटीन हिस्ट्री नहीं है।"
