@@ -1,9 +1,9 @@
 # Ask AI — Project State
 
-Updated: 20261125-091734
+Updated: 20261126
 Package: com.akingstar.askai
 Repository: akingstar/AskAI
-Branch: main
+Branch: ai-reliable-fallback-20261126
 Audit baseline: 9ab01a646102393f81557bb5ae0d822cd1498224
 
 ## Phase status
@@ -11,7 +11,7 @@ Audit baseline: 9ab01a646102393f81557bb5ae0d822cd1498224
 - Phase 2: Phone controls — coverage audit pending.
 - Phase 3: Accessibility screen reading foundation exists.
 - Phase 4: ActionPlan, PlanValidator and ActionExecutor exist.
-- Phase 5: IN PROGRESS — Universal Control Discovery.
+- Phase 5: COMPLETED — Universal Control Discovery and voice integration verified by CI.
 - Phase 6: Security and final testing pending.
 
 ## Current module
@@ -35,7 +35,7 @@ Backup-first; one complete module at a time; no scratch rewrite;
 no placeholders; no APK installation before explicit approval.
 
 ## Universal Control Discovery
-- Status: implemented; GitHub Actions verification pending.
+- Status: implemented; GitHub Actions verification passed (run 45710467784).
 - Active service: AskAIAccessibilityService.
 - Inventory: clickable controls, editable fields, password-field type, scroll areas, labels, resource IDs and enabled state.
 - Privacy: editable text values are excluded; password labels are generic; labels pass through SensitiveDataFilter.
@@ -48,12 +48,12 @@ no placeholders; no APK installation before explicit approval.
 - PlanValidator accepts discover_controls only with empty target/value.
 - OfflineParser recognizes Hindi and English control-discovery commands.
 - AIClient schema instructions updated.
-- ActionExecutor routes to active Accessibility Service; read-only.
-- Validator and offline parser tests added; CI verification pending.
+- ActionExecutor routes to active Accessibility Service; read-only. CI verification passed (run 45710467784).
+- Validator and offline parser tests added; CI verification passed (run 45710467784).
 
 
 ## Safe Dynamic Control Matching
-- Status: implemented; GitHub Actions verification required.
+- Status: implemented; GitHub Actions verification passed (run 45710467784).
 - Tap and long-press require one exact visible label match.
 - Duplicate/missing labels fail closed; no first-substring selection.
 - Tap and long-press require an enabled, visible clickable target.
@@ -64,7 +64,7 @@ no placeholders; no APK installation before explicit approval.
 - Unit tests cover exact matching, normalization and ambiguity.
 
 ## Hindi Screen Narration
-- Status: implemented; GitHub Actions verification pending.
+- Status: implemented; GitHub Actions verification passed (run 45710467784).
 - discover_controls now speaks a concise Hindi description instead of raw JSON.
 - Describes buttons, text fields, choices, scroll areas and disabled controls.
 - Password fields are described generically; editable contents are never narrated.
@@ -78,5 +78,22 @@ no placeholders; no APK installation before explicit approval.
 - Unicode-preserving Hindi normalization implemented.
 - Hindi tap, typing and long-press regression tests added.
 - Sensitive input and risky-target checks retained.
-- APK not installed; merge and main CI pending.
+- PR #1 merged; feature and main CI passed (runs 45543593917 and 45543742580). APK not installed.
 - Updated: 20261125-092745
+
+
+## Reliable AI + Offline Fallback
+- Status: implemented; GitHub Actions verification passed.
+- Feature branch: ai-reliable-fallback-20261126.
+- Commit: 7ada8b6 — Add reliable offline AI fallback.
+- CI run: 45710467784 — successful.
+- Unit tests passed; debug APK built; artifact uploaded.
+- Blank endpoint uses validated OfflineParser output.
+- Eligible online failures can fall back to a validated offline plan:
+  network errors, invalid responses, HTTP 429 and HTTP 5xx.
+- Invalid/insecure endpoints and non-retryable client errors do not
+  silently switch to offline mode.
+- Offline plans are round-tripped through PlanValidator before use.
+- Hindi, Hinglish and English web-search queries retain their search text.
+- Main branch has not been changed by this feature branch.
+- APK installation remains deferred until explicit user approval.
