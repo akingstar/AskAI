@@ -8,8 +8,86 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
 class AskAIAccessibilityService : AccessibilityService() {
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        activeService = this
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        if (activeService === this) activeService = null
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        if (activeService === this) activeService = null
+        super.onDestroy()
+    }
+
+    private fun performCommand(
+        action: String,
+        value: String,
+        target: String
+    ): String? {
+        return when (action) {
+            "tap_text" ->
+                if (target.isNotBlank() && tapText(target)) "टैप कर दिया।" else null
+
+            "long_press_text" ->
+                if (target.isNotBlank() && longPressText(target)) "लॉन्ग प्रेस किया।" else null
+
+            "type_text" ->
+                if (target.isNotBlank() && setText(value, target)) "टेक्स्ट लिख दिया।" else null
+
+            "scroll_up" ->
+                if (scroll("up")) "ऊपर स्क्रॉल किया।" else null
+
+            "scroll_down" ->
+                if (scroll("down")) "नीचे स्क्रॉल किया।" else null
+
+            "home" ->
+                if (global("home")) "होम स्क्रीन खोल दी।" else null
+
+            "back" ->
+                if (global("back")) "पीछे आ गया।" else null
+
+            "recents" ->
+                if (global("recents")) "हाल के ऐप खोल दिए।" else null
+
+            "notifications" ->
+                if (global("notifications")) "नोटिफिकेशन खोल दिए।" else null
+
+            "quick_settings" ->
+                if (global("quick_settings")) "क्विक सेटिंग खोल दी।" else null
+
+            "read_screen" ->
+                readScreen().takeIf { it.isNotBlank() }
+
+            else -> null
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var activeService: AskAIAccessibilityService? = null
+
+        fun perform(
+            action: String,
+            value: String = "",
+            target: String = ""
+        ): String? {
+            if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+                return null
+            }
+            val service = activeService ?: return null
+            return runCatching {
+                service.performCommand(action, value, target)
+            }.getOrNull()
+        }
+    }
 
     fun global(action: String): Boolean {
         val code = when (action) {
@@ -27,35 +105,57 @@ class AskAIAccessibilityService : AccessibilityService() {
     }
 
     fun tapText(text: String): Boolean {
+        if (text.isBlank() || text.length > 100) return false
         val root = rootInActiveWindow ?: return false
         val node = findText(root, text) ?: return false
-        val clickable = clickableParent(node) ?: node
+        val clickable = clickableParent(node) ?: return false
         return clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
     fun longPressText(text: String): Boolean {
+        if (text.isBlank() || text.length > 100) return false
         val root = rootInActiveWindow ?: return false
         val node = findText(root, text) ?: return false
         return node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
     }
 
-    fun setText(text: String): Boolean {
+    fun setText(text: String, fieldHint: String): Boolean {
+        if (text.isBlank() || text.length > 500 ||
+            fieldHint.isBlank() || fieldHint.length > 100
+        ) return false
+
         val root = rootInActiveWindow ?: return false
-        val node = findEditable(root) ?: return false
+        val matches = findEditables(root).filter { node ->
+            listOfNotNull(
+                node.text?.toString(),
+                node.hintText?.toString(),
+                node.contentDescription?.toString()
+            ).any { it.contains(fieldHint, ignoreCase = true) }
+        }
+
+        // Never guess when the field hint matches zero or multiple fields.
+        val node = matches.singleOrNull() ?: return false
+
         return node.performAction(
             AccessibilityNodeInfo.ACTION_SET_TEXT,
-            android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
+            android.os.Bundle().apply {
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    text
+                )
+            }
         )
     }
 
     fun scroll(direction: String): Boolean {
         val root = rootInActiveWindow ?: return false
+        val node = findScrollable(root) ?: return false
         val action = when (direction) {
             "up" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
             "down" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-            else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            else -> return false
         }
-        return root.performAction(action)
+        return node.performAction(action)
     }
 
     fun readScreen(): String {
@@ -86,10 +186,28 @@ class AskAIAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun findEditable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.isEditable) return node
+    private fun findEditables(
+        node: AccessibilityNodeInfo
+    ): List<AccessibilityNodeInfo> {
+        val result = mutableListOf<AccessibilityNodeInfo>()
+
+        fun collectEditable(current: AccessibilityNodeInfo) {
+            if (current.isEditable) result.add(current)
+            for (i in 0 until current.childCount) {
+                current.getChild(i)?.let(::collectEditable)
+            }
+        }
+
+        collectEditable(node)
+        return result
+    }
+
+    private fun findScrollable(
+        node: AccessibilityNodeInfo
+    ): AccessibilityNodeInfo? {
+        if (node.isScrollable) return node
         for (i in 0 until node.childCount) {
-            val found = node.getChild(i)?.let { findEditable(it) }
+            val found = node.getChild(i)?.let(::findScrollable)
             if (found != null) return found
         }
         return null

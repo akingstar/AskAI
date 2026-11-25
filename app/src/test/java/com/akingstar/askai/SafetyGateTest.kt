@@ -24,6 +24,23 @@ class SafetyGateTest {
     }
 
     @Test
+    fun accessibilityTextActionsRequireConfirmation() {
+        assertTrue(SafetyGate.needsConfirmation("tap_text", "Settings"))
+        assertTrue(SafetyGate.needsConfirmation("long_press_text", "Photo"))
+        assertTrue(SafetyGate.needsConfirmation("type_text", "Search"))
+    }
+
+    @Test
+    fun blocksRiskyUiLabelsAndSensitiveFields() {
+        assertTrue(SafetyGate.isRiskyTapTarget("Send"))
+        assertTrue(SafetyGate.isRiskyTapTarget("भुगतान करें"))
+        assertFalse(SafetyGate.isRiskyTapTarget("Settings"))
+        assertTrue(SafetyGate.isSensitiveInputTarget("Password"))
+        assertTrue(SafetyGate.isSensitiveInputTarget("OTP"))
+        assertFalse(SafetyGate.isSensitiveInputTarget("Search"))
+    }
+
+    @Test
     fun rejectsUnsupportedSensitiveActions() {
         assertTrue(SafetyGate.isNeverAllowedAction("sms"))
         assertTrue(SafetyGate.isNeverAllowedAction("call"))

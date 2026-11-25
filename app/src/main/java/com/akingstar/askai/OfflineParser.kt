@@ -9,6 +9,15 @@ object OfflineParser {
         .replace(Regex("\\s+"), " ").trim()
 
     private val commands = listOf(
+        listOf("home", "go home", "home screen", "होम जाओ", "होम स्क्रीन", "होम खोलो"),
+        listOf("back", "go back", "पीछे जाओ", "वापस जाओ", "बैक करो"),
+        listOf("recents", "recent apps", "हाल के ऐप", "हाल के ऐप दिखाओ"),
+        listOf("notifications", "show notifications", "नोटिफिकेशन दिखाओ", "सूचनाएं दिखाओ"),
+        listOf("quick_settings", "quick settings", "क्विक सेटिंग", "क्विक सेटिंग खोलो"),
+        listOf("scroll_up", "scroll up", "ऊपर स्क्रॉल"),
+        listOf("scroll_down", "scroll down", "नीचे स्क्रॉल"),
+        listOf("read_screen", "read screen", "स्क्रीन पढ़ो", "यहाँ क्या लिखा है"),
+        listOf("accessibility_settings", "accessibility settings", "एक्सेसिबिलिटी सेटिंग"),
         listOf("torch", "flashlight", "torch on", "flashlight on", "टॉर्च", "टॉर्च जलाओ", "torch jalao"),
         listOf("torch_off", "flashlight off", "टॉर्च बंद", "torch band"),
         listOf("volume_up", "volume up", "आवाज बढ़ाओ", "volume badhao", "आवाज़ तेज"),

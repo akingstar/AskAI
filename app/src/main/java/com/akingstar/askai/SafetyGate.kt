@@ -58,9 +58,33 @@ object SafetyGate {
             "सावधान: यह ऐप आपकी स्क्रीन किसी दूसरे व्यक्ति को दिखा सकता है। OTP, PIN या पासवर्ड साझा न करें।"
         } else null
 
+    private val riskyUiLabels = listOf(
+        "send", "submit", "delete", "remove", "pay",
+        "payment", "transfer", "purchase", "buy", "confirm",
+        "भेजें", "भेजो", "डिलीट", "हटाएं", "हटाओ",
+        "भुगतान", "खरीद", "पुष्टि"
+    )
+
+    private val sensitiveFieldLabels = listOf(
+        "password", "passcode", "pin", "otp",
+        "verification code", "security code", "cvv",
+        "पासवर्ड", "पिन", "ओटीपी"
+    )
+
+    fun isRiskyTapTarget(target: String): Boolean {
+        val normalized = normalize(target)
+        return riskyUiLabels.any { normalized.contains(normalize(it)) }
+    }
+
+    fun isSensitiveInputTarget(target: String): Boolean {
+        val normalized = normalize(target)
+        return sensitiveFieldLabels.any { normalized.contains(normalize(it)) }
+    }
+
     fun needsConfirmation(action: String, target: String): Boolean =
         action.lowercase(Locale.ROOT) in setOf(
             "call", "sms", "delete", "uninstall",
-            "security_settings"
+            "security_settings", "tap_text", "long_press_text",
+            "type_text"
         ) || target.matches(Regex("\\+?[0-9]{7,15}"))
 }

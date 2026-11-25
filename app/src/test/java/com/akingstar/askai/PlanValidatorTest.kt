@@ -4,6 +4,38 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlanValidatorTest {
+    @Test fun acceptsAccessibilityNavigationActions() {
+        val actions = listOf(
+            "scroll_up", "scroll_down", "home", "back",
+            "recents", "notifications", "quick_settings",
+            "read_screen", "accessibility_settings"
+        )
+        actions.forEach { action ->
+            val json = """{"language":"hi-IN","steps":[{"action":"$action","target":"","value":""}]}"""
+            assertNotNull("$action should be accepted", PlanValidator.parse(json))
+        }
+    }
+
+    @Test fun acceptsTextActionsWithRequiredArguments() {
+        val tap = """{"language":"hi-IN","steps":[{"action":"tap_text","target":"Settings","value":""}]}"""
+        val press = """{"language":"hi-IN","steps":[{"action":"long_press_text","target":"Photo","value":""}]}"""
+        val type = """{"language":"hi-IN","steps":[{"action":"type_text","target":"Search","value":"weather"}]}"""
+        assertNotNull(PlanValidator.parse(tap))
+        assertNotNull(PlanValidator.parse(press))
+        assertNotNull(PlanValidator.parse(type))
+    }
+
+    @Test fun rejectsAmbiguousOrMalformedTextActions() {
+        val noTarget = """{"language":"hi-IN","steps":[{"action":"tap_text","target":"","value":""}]}"""
+        val typeNoHint = """{"language":"hi-IN","steps":[{"action":"type_text","target":"","value":"hello"}]}"""
+        val typeNoValue = """{"language":"hi-IN","steps":[{"action":"type_text","target":"Search","value":""}]}"""
+        val navWithTarget = """{"language":"hi-IN","steps":[{"action":"home","target":"YouTube","value":""}]}"""
+        assertNull(PlanValidator.parse(noTarget))
+        assertNull(PlanValidator.parse(typeNoHint))
+        assertNull(PlanValidator.parse(typeNoValue))
+        assertNull(PlanValidator.parse(navWithTarget))
+    }
+
     @Test fun acceptsExactSchema() {
         val p = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":""}]}"""
         assertNotNull(PlanValidator.parse(p))

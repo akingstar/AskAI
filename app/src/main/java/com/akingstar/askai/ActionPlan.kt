@@ -17,6 +17,10 @@ data class ActionPlan(val language: String, val steps: List<ActionStep>)
 
 object PlanValidator {
     private val allowed = setOf(
+        "tap_text", "long_press_text", "type_text",
+        "scroll_up", "scroll_down", "home", "back",
+        "recents", "notifications", "quick_settings",
+        "read_screen", "accessibility_settings",
         "open_app", "alarm", "timer", "camera", "selfie", "gallery",
         "torch", "torch_off", "volume_up", "volume_down", "brightness",
         "dnd", "ringer", "rotation", "youtube", "maps", "web", "music",
@@ -65,6 +69,21 @@ object PlanValidator {
                     target.length > 160 ||
                     value.length > 500 ||
                     (action == "open_app" && target.isBlank() && value.isBlank())
+                ) return null
+
+                if (action in setOf("tap_text", "long_press_text") &&
+                    (target.isBlank() || value.isNotBlank())
+                ) return null
+
+                if (action == "type_text" &&
+                    (target.isBlank() || value.isBlank())
+                ) return null
+
+                if (action in setOf(
+                    "scroll_up", "scroll_down", "home", "back",
+                    "recents", "notifications", "quick_settings",
+                    "read_screen", "accessibility_settings"
+                ) && (target.isNotBlank() || value.isNotBlank())
                 ) return null
 
                 if (SafetyGate.isNeverAllowedAction(action)) return null

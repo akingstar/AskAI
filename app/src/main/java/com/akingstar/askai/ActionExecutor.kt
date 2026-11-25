@@ -211,8 +211,18 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
             SafetyGate.warningForApp(step.target)
         } else null
 
+        val riskyUiTap =
+            step.action == "tap_text" &&
+                SafetyGate.isRiskyTapTarget(step.target)
+
+        val sensitiveField =
+            step.action == "type_text" &&
+                SafetyGate.isSensitiveInputTarget(step.target)
+
         if (SafetyGate.blocked(sensitiveText) ||
-            SafetyGate.isNeverAllowedAction(step.action)
+            SafetyGate.isNeverAllowedAction(step.action) ||
+            riskyUiTap ||
+            sensitiveField
         ) {
             speak("सुरक्षा के लिए यह काम रोक दिया गया है।")
             next(false, "BLOCKED", "Safety policy blocked this action",
@@ -273,6 +283,41 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
     private fun executeStep(step: ActionStep): Boolean {
         val value = step.value.ifBlank { step.target }
         return when (step.action) {
+            "tap_text" ->
+                accessibilityAction("tap_text", target = step.target)
+
+            "long_press_text" ->
+                accessibilityAction("long_press_text", target = step.target)
+
+            "type_text" ->
+                accessibilityAction(
+                    "type_text",
+                    value = step.value,
+                    target = step.target
+                )
+
+            "scroll_up" -> accessibilityAction("scroll_up")
+            "scroll_down" -> accessibilityAction("scroll_down")
+            "home" -> accessibilityAction("home")
+            "back" -> accessibilityAction("back")
+            "recents" -> accessibilityAction("recents")
+            "notifications" -> accessibilityAction("notifications")
+            "quick_settings" -> accessibilityAction("quick_settings")
+
+            "read_screen" -> {
+                val screen = AskAIAccessibilityService.perform("read_screen")
+                if (screen.isNullOrBlank()) {
+                    speak("स्क्रीन पढ़ने के लिए Accessibility अनुमति चालू करें।")
+                    false
+                } else {
+                    speak(screen.take(700))
+                    true
+                }
+            }
+
+            "accessibility_settings" ->
+                openIntent(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+
             "open_app", "phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar" -> {
                 val key = (step.target.ifBlank { step.action }).lowercase()
                 if (step.action in setOf("phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar")) {
@@ -364,6 +409,25 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                 false
             }
         }
+    }
+
+    private fun accessibilityAction(
+        action: String,
+        value: String = "",
+        target: String = ""
+    ): Boolean {
+        val result = AskAIAccessibilityService.perform(action, value, target)
+
+        if (result == null) {
+            speak(
+                "यह काम नहीं हो सका। Ask AI की Accessibility अनुमति चालू करें " +
+                    "और सही स्क्रीन खुली रखें।"
+            )
+            return false
+        }
+
+        if (result.isNotBlank()) speak(result)
+        return true
     }
 
     private fun openPackage(pkg: String): Boolean {
