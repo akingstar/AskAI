@@ -20,7 +20,7 @@ object PlanValidator {
         "tap_text", "long_press_text", "type_text",
         "scroll_up", "scroll_down", "home", "back",
         "recents", "notifications", "quick_settings",
-        "read_screen", "accessibility_settings",
+        "read_screen", "discover_controls", "accessibility_settings",
         "open_app", "alarm", "timer", "camera", "selfie", "gallery",
         "torch", "torch_off", "volume_up", "volume_down", "brightness",
         "dnd", "ringer", "rotation", "youtube", "maps", "web", "music",
@@ -82,7 +82,7 @@ object PlanValidator {
                 if (action in setOf(
                     "scroll_up", "scroll_down", "home", "back",
                     "recents", "notifications", "quick_settings",
-                    "read_screen", "accessibility_settings"
+                    "read_screen", "discover_controls", "accessibility_settings"
                 ) && (target.isNotBlank() || value.isNotBlank())
                 ) return null
 

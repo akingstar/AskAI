@@ -8,12 +8,19 @@ class PlanValidatorTest {
         val actions = listOf(
             "scroll_up", "scroll_down", "home", "back",
             "recents", "notifications", "quick_settings",
-            "read_screen", "accessibility_settings"
+            "read_screen", "discover_controls", "accessibility_settings"
         )
         actions.forEach { action ->
             val json = """{"language":"hi-IN","steps":[{"action":"$action","target":"","value":""}]}"""
             assertNotNull("$action should be accepted", PlanValidator.parse(json))
         }
+    }
+
+    @Test fun discoverControlsRequiresEmptyArguments() {
+        val valid = """{"language":"hi-IN","steps":[{"action":"discover_controls","target":"","value":""}]}"""
+        val invalid = """{"language":"hi-IN","steps":[{"action":"discover_controls","target":"Settings","value":""}]}"""
+        assertNotNull(PlanValidator.parse(valid))
+        assertNull(PlanValidator.parse(invalid))
     }
 
     @Test fun acceptsTextActionsWithRequiredArguments() {

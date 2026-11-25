@@ -20,6 +20,17 @@ class AccessibilityOfflineParserTest {
     }
 
     @Test
+    fun parsesHindiAndEnglishControlDiscovery() {
+        listOf("कंट्रोल दिखाओ", "स्क्रीन के बटन दिखाओ", "show controls")
+            .forEach { command ->
+                val step = OfflineParser.parse(command)?.steps?.first()
+                assertEquals("discover_controls", step?.action)
+                assertEquals("", step?.target)
+                assertEquals("", step?.value)
+            }
+    }
+
+    @Test
     fun parsesAccessibilitySettings() {
         val plan = OfflineParser.parse("एक्सेसिबिलिटी सेटिंग")
         assertNotNull(plan)

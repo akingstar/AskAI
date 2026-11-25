@@ -17,6 +17,7 @@ object OfflineParser {
         listOf("scroll_up", "scroll up", "ऊपर स्क्रॉल"),
         listOf("scroll_down", "scroll down", "नीचे स्क्रॉल"),
         listOf("read_screen", "read screen", "स्क्रीन पढ़ो", "यहाँ क्या लिखा है"),
+        listOf("discover_controls", "discover controls", "show controls", "स्क्रीन के बटन दिखाओ", "कंट्रोल दिखाओ", "यहाँ कौन से बटन हैं"),
         listOf("accessibility_settings", "accessibility settings", "एक्सेसिबिलिटी सेटिंग"),
         listOf("torch", "flashlight", "torch on", "flashlight on", "टॉर्च", "टॉर्च जलाओ", "torch jalao"),
         listOf("torch_off", "flashlight off", "टॉर्च बंद", "torch band"),
@@ -82,7 +83,7 @@ object OfflineParser {
             }.maxByOrNull { it.second }?.first
                 ?: return null
 
-            ActionStep(found, "", part)
+            ActionStep(found, "", if (found == "discover_controls") "" else part)
         }
         if (steps.isEmpty()) return null
         return ActionPlan(if (input.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN", steps)

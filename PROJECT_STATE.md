@@ -42,3 +42,11 @@ no placeholders; no APK installation before explicit approval.
 - Limits: 300 visited nodes, 100 reported controls, depth 20; accessibility events throttled to 350 ms.
 - Voice/action entry: discover_controls.
 - Tests: ControlDiscoveryTest.
+
+
+## Control Discovery Voice Integration
+- PlanValidator accepts discover_controls only with empty target/value.
+- OfflineParser recognizes Hindi and English control-discovery commands.
+- AIClient schema instructions updated.
+- ActionExecutor routes to active Accessibility Service; read-only.
+- Validator and offline parser tests added; CI verification pending.

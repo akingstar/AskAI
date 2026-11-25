@@ -315,6 +315,17 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                 }
             }
 
+            "discover_controls" -> {
+                val controls = AskAIAccessibilityService.perform("discover_controls")
+                if (controls.isNullOrBlank() || controls == "[]") {
+                    speak("इस स्क्रीन पर पढ़ने योग्य कंट्रोल नहीं मिले।")
+                    false
+                } else {
+                    speak("स्क्रीन पर उपलब्ध कंट्रोल: ${controls.take(700)}")
+                    true
+                }
+            }
+
             "accessibility_settings" ->
                 openIntent(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
 
