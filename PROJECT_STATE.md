@@ -51,7 +51,8 @@ no placeholders; no APK installation before explicit approval.
 - ActionExecutor routes to active Accessibility Service; read-only.
 - Validator and offline parser tests added; CI verification pending.
 
-\n## Safe Dynamic Control Matching
+
+## Safe Dynamic Control Matching
 - Status: implemented; GitHub Actions verification required.
 - Tap and long-press require one exact visible label match.
 - Duplicate/missing labels fail closed; no first-substring selection.
@@ -61,3 +62,12 @@ no placeholders; no APK installation before explicit approval.
 - Accessibility traversal is bounded to 300 nodes and depth 20.
 - Risky labels are blocked for both tap and long-press.
 - Unit tests cover exact matching, normalization and ambiguity.
+
+## Hindi Screen Narration
+- Status: implemented; GitHub Actions verification pending.
+- discover_controls now speaks a concise Hindi description instead of raw JSON.
+- Describes buttons, text fields, choices, scroll areas and disabled controls.
+- Password fields are described generically; editable contents are never narrated.
+- Duplicate descriptions are collapsed; spoken inventory is limited to 8 items.
+- read_screen continues to read visible text as-is.
+- Unit tests cover narration, duplicates, disabled controls and malformed inventory.
