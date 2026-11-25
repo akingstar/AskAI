@@ -15,8 +15,7 @@ object ScreenNarrator {
             return "इस स्क्रीन पर पढ़ने योग्य कंट्रोल नहीं मिले।"
         }
 
-        val descriptions = linkedSetOf<String>()
-        var total = 0
+        val descriptions = linkedMapOf<String, String>()
 
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
@@ -49,18 +48,20 @@ object ScreenNarrator {
             val finalDescription = if (enabled) description
                 else "$description, अभी उपलब्ध नहीं"
 
-            total++
-            descriptions.add(
-                finalDescription.lowercase()
-                    .replace(Regex("\\s+"), " ")
-            )
+              val displayText = finalDescription
+                  .replace(Regex("\\s+"), " ")
+                  .trim()
+              val duplicateKey = displayText.lowercase()
+              if (!descriptions.containsKey(duplicateKey)) {
+                  descriptions[duplicateKey] = displayText
+              }
         }
 
         if (descriptions.isEmpty()) {
             return "इस स्क्रीन पर पढ़ने योग्य नाम वाले कंट्रोल नहीं मिले।"
         }
 
-        val shown = descriptions.take(8)
+        val shown = descriptions.values.take(8)
         val remaining = (descriptions.size - shown.size).coerceAtLeast(0)
         val details = shown.joinToString("، ")
         val suffix = if (remaining > 0) " और $remaining अन्य कंट्रोल" else ""
