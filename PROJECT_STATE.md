@@ -1,6 +1,6 @@
 # Ask AI — Project State
 
-Updated: 20261125-083356
+Updated: 20261125-091734
 Package: com.akingstar.askai
 Repository: akingstar/AskAI
 Branch: main
@@ -71,3 +71,12 @@ no placeholders; no APK installation before explicit approval.
 - Duplicate descriptions are collapsed; spoken inventory is limited to 8 items.
 - read_screen continues to read visible text as-is.
 - Unit tests cover narration, duplicates, disabled controls and malformed inventory.
+
+## Dynamic Hindi / Hinglish Voice Commands
+- Status: feature branch CI passed.
+- CI run: 45543393917
+- Unicode-preserving Hindi normalization implemented.
+- Hindi tap, typing and long-press regression tests added.
+- Sensitive input and risky-target checks retained.
+- APK not installed; merge and main CI pending.
+- Updated: 20261125-092745
