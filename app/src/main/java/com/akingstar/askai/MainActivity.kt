@@ -662,7 +662,7 @@ class MainActivity : Activity() {
                 showWhatsAppListeningPrompt()
             } else {
                 invalidateWhatsAppVoiceSession()
-        whatsAppVoiceConsent = false
+                whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
                 speech.onFailure = null
                 whatsAppDraftFlow.reset()
@@ -921,7 +921,7 @@ class MainActivity : Activity() {
 
                     SpeechFailure.PERMISSION -> {
                         invalidateWhatsAppVoiceSession()
-        whatsAppVoiceConsent = false
+                        whatsAppVoiceConsent = false
                         whatsAppResumeListening = false
                         whatsAppDraftFlow.reset()
                         whatsAppSpeechRetryPolicy.reset()
@@ -965,7 +965,7 @@ class MainActivity : Activity() {
 
             WhatsAppDraftFlow.Result.Cancelled -> {
                 invalidateWhatsAppVoiceSession()
-        whatsAppVoiceConsent = false
+                whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
                 pendingWhatsAppNumber = null
                 status.text = "WhatsApp संदेश रद्द कर दिया गया।"
@@ -1031,7 +1031,7 @@ class MainActivity : Activity() {
                         whatsAppDraftFlow.reset()
                         whatsAppSpeechRetryPolicy.reset()
                         invalidateWhatsAppVoiceSession()
-        whatsAppVoiceConsent = false
+                        whatsAppVoiceConsent = false
                         whatsAppResumeListening = false
                         pendingWhatsAppNumber = null
                         status.text = "WhatsApp draft रद्द कर दिया गया।"
@@ -1043,7 +1043,7 @@ class MainActivity : Activity() {
                 whatsAppDraftFlow.reset()
                 whatsAppSpeechRetryPolicy.reset()
                 invalidateWhatsAppVoiceSession()
-        whatsAppVoiceConsent = false
+                whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
                 pendingWhatsAppNumber = null
             }
@@ -1192,7 +1192,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        speech.stop()
+        invalidateWhatsAppVoiceSession()
         tts.close()
         super.onDestroy()
     }
