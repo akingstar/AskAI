@@ -321,7 +321,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                     speak("इस स्क्रीन पर पढ़ने योग्य कंट्रोल नहीं मिले।")
                     false
                 } else {
-                    speak("स्क्रीन पर उपलब्ध कंट्रोल: ${controls.take(700)}")
+                    speak(ScreenNarrator.describe(controls))
                     true
                 }
             }
