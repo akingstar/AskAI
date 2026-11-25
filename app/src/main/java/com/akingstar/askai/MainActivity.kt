@@ -654,7 +654,6 @@ class MainActivity : Activity() {
             } else {
                 whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
-                whatsAppRecognitionRetries = 0
                 speech.onFailure = null
                 whatsAppDraftFlow.reset()
                 whatsAppSpeechRetryPolicy.reset()
