@@ -129,23 +129,45 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
                         failedSteps = nextFailed + 1,
                         cancelledSteps = nextCancelled,
                         stepResults = stepResults.toList(),
-                        skippedSteps = nextSkipped
+                        skippedSteps = nextSkipped +
+                            ExecutionFlowPolicy.remainingStepsAfter(
+                                position,
+                                selectedIndices.size
+                            )
                     )
                 )
             } else {
                 stepResults.add(stepResult)
-                executeAt(
-                    steps,
-                    selectedIndices,
-                    position + 1,
-                    nextSucceeded,
-                    nextFailed,
-                    nextCancelled,
-                    nextSkipped,
-                    stepResults,
-                    onStepResult,
-                    onComplete
-                )
+
+                if (ExecutionFlowPolicy.shouldStopAfter(resultStatus)) {
+                    val remaining = ExecutionFlowPolicy.remainingStepsAfter(
+                        position,
+                        selectedIndices.size
+                    )
+                    onComplete(
+                        ExecutionSummary(
+                            totalSteps = selectedIndices.size,
+                            succeededSteps = nextSucceeded,
+                            failedSteps = nextFailed,
+                            cancelledSteps = nextCancelled,
+                            stepResults = stepResults.toList(),
+                            skippedSteps = nextSkipped + remaining
+                        )
+                    )
+                } else {
+                    executeAt(
+                        steps,
+                        selectedIndices,
+                        position + 1,
+                        nextSucceeded,
+                        nextFailed,
+                        nextCancelled,
+                        nextSkipped,
+                        stepResults,
+                        onStepResult,
+                        onComplete
+                    )
+                }
             }
         }
 
