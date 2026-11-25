@@ -13,8 +13,8 @@ class SmsDraftValidatorTest {
     @Test
     fun preservesMultilineMessage() {
         assertEquals(
-            "नमस्ते\\nकैसे हैं?",
-            SmsDraftValidator.normalize("नमस्ते\\nकैसे हैं?")
+            "नमस्ते\nकैसे हैं?",
+            SmsDraftValidator.normalize("नमस्ते\nकैसे हैं?")
         )
     }
 
@@ -31,7 +31,7 @@ class SmsDraftValidatorTest {
 
     @Test
     fun rejectsUnsupportedControlCharacters() {
-        assertNull(SmsDraftValidator.normalize("hello\\u0000world"))
+        assertNull(SmsDraftValidator.normalize("hello\u0000world"))
     }
 
     @Test
