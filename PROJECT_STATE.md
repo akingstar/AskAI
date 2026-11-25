@@ -1,6 +1,6 @@
 # Ask AI — Project State
 
-Updated: 20261126
+Updated: 20261126 (Permission & Privacy Guard verified)
 Package: com.akingstar.askai
 Repository: akingstar/AskAI
 Branch: ai-reliable-fallback-20261126
@@ -15,13 +15,14 @@ Audit baseline: 9ab01a646102393f81557bb5ae0d822cd1498224
 - Phase 6: Security and final testing pending.
 
 ## Current module
-Universal Control Discovery:
-- Identify the active Manifest-registered AccessibilityService.
-- Identify the ActionExecutor actually used by MainActivity.
-- Reuse the existing accessibility bridge.
-- Discover visible controls without collecting sensitive values.
-- Keep PlanValidator, SafetyGate and ActionExecutor synchronized.
-- Add tests before integration.
+Permission & Privacy Guard:
+- Status: implemented; GitHub Actions verification passed (run 45721039903).
+- Permission declarations reduced to those required by active features.
+- Notification-listener access disabled; arbitrary notification content is no longer collected or displayed.
+- Camera permission is requested only when a torch action requires it.
+- A blocked permission-dependent action stops the remaining action plan.
+- Main branch remains unchanged; APK installation is deferred.
+- Next: update roadmap and audit the next feature before implementation.
 
 ## Important discovery
 Duplicate service and executor implementations exist.
@@ -113,4 +114,31 @@ no placeholders; no APK installation before explicit approval.
 - This is an app-side request limiter, not a provider billing or spending cap. Provider dashboard quota/billing controls remain necessary.
 - Usage policy tests cover the daily limit, day rollover, duplicate window, different commands and clock rollback.
 - Feature branch: ai-reliable-fallback-20261126.
-- Verification pending: GitHub Actions CI after this feature commit is pushed.
+- Verification: GitHub Actions CI passed (run 45717148644).
+- Unit tests passed; debug APK built; artifact uploaded.
+- No known failing checks in that run.
+
+## Execution Flow Safety
+- Status: implemented; GitHub Actions verification passed (run 45718943470).
+- Remaining action-plan steps stop after CANCELLED or BLOCKED.
+- Ordinary success, failure and skipped outcomes retain their defined continuation behavior.
+- History persistence failure is handled as a failed/skipped execution path.
+- Unit tests cover stop conditions and remaining-step counts.
+
+## Permission & Privacy Guard
+- Status: implemented; GitHub Actions verification passed (run 45721039903).
+- Commit: 7cf3490 — Harden permissions and notification privacy.
+- Manifest permissions retained: INTERNET, RECORD_AUDIO, POST_NOTIFICATIONS,
+  ACCESS_NOTIFICATION_POLICY, CAMERA and MODIFY_AUDIO_SETTINGS.
+- Unused direct-call, contacts, SMS, phone-state, call-log, location,
+  overlay, vibration and microphone-foreground-service permissions removed.
+- Active notification-listener registration removed; the listener no longer
+  collects notification title/body content.
+- Local history no longer displays arbitrary notification content and clears
+  the legacy last_notification entry.
+- CAMERA runtime permission is requested for torch actions when needed.
+- The blocked torch action does not automatically resume after permission
+  grant; the user must explicitly retry the command.
+- Manifest XML and targeted source assertions passed before CI.
+- GitHub Actions unit tests and debug APK build passed; artifact uploaded.
+- Main branch unchanged; APK installation remains deferred.
