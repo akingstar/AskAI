@@ -88,19 +88,19 @@ object OfflineParser {
         }
 
         Regex(
-            "^(.{1,160}?)\\\\s+(?:में|me)\\\\s+(.{1,500}?)\\\\s+" +
+            "^(.{1,160}?)\\s+(?:में|me)\\s+(.{1,500}?)\\s+" +
                 "(?:लिखो|लिखें|टाइप करो|भर दो|likho|type karo)$"
         ).matchEntire(text)?.let {
             return typed(it.groupValues[1], it.groupValues[2])
         }
 
-        Regex("^type\\\\s+(.{1,500}?)\\\\s+in\\\\s+(.{1,160})$")
+        Regex("^type\\s+(.{1,500}?)\\s+in\\s+(.{1,160})$")
             .matchEntire(text)?.let {
                 return typed(it.groupValues[2], it.groupValues[1])
             }
 
         Regex(
-            "^(.{1,160}?)\\\\s+(?:(?:par|पर)\\\\s+)?" +
+            "^(.{1,160}?)\\s+(?:(?:par|पर)\\s+)?" +
                 "(?:long press karo|long press|लंबे समय तक दबाओ)$"
         ).matchEntire(text)?.let {
             val t = target(it.groupValues[1]) ?: return null
@@ -109,8 +109,8 @@ object OfflineParser {
         }
 
         Regex(
-            "^(.{1,160}?)\\\\s+(?:(?:button|बटन)\\\\s+)?" +
-                "(?:(?:par|पर)\\\\s+)?" +
+            "^(.{1,160}?)\\s+(?:(?:button|बटन)\\s+)?" +
+                "(?:(?:par|पर)\\s+)?" +
                 "(?:दबाओ|दबाएं|क्लिक करो|click karo|click|tap karo|tap)$"
         ).matchEntire(text)?.let {
             val t = target(it.groupValues[1]) ?: return null
@@ -118,7 +118,7 @@ object OfflineParser {
             return ActionStep("tap_text", t)
         }
 
-        Regex("^(?:tap|click)\\\\s+(.{1,160})$")
+        Regex("^(?:tap|click)\\s+(.{1,160})$")
             .matchEntire(text)?.let {
                 val t = target(it.groupValues[1]) ?: return null
                 if (SafetyGate.isRiskyTapTarget(t)) return null
