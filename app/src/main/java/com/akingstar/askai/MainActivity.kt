@@ -730,21 +730,89 @@ class MainActivity : Activity() {
         }
 
         val displayName = name.ifBlank { "चुना गया संपर्क" }
+        showContactActionDialog(displayName, number)
+    }
+
+    private fun showContactActionDialog(name: String, number: String) {
         android.app.AlertDialog.Builder(this)
-            .setTitle("कॉल करने की पुष्टि")
-            .setMessage("$displayName\n$number\n\nDialer खुलेगा। कॉल लगाने से पहले आप नंबर जाँच सकते हैं।")
+            .setTitle("संपर्क: $name")
+            .setMessage("$number\\n\\nआप क्या करना चाहते हैं?")
             .setNegativeButton("रद्द करें", null)
-            .setPositiveButton("Dialer खोलें") { _, _ ->
+            .setPositiveButton("कॉल") { _, _ ->
                 try {
-                    val dialIntent = Intent(
-                        Intent.ACTION_DIAL,
-                        Uri.fromParts("tel", number, null)
+                    startActivity(
+                        Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))
                     )
-                    startActivity(dialIntent)
                     status.text = "Dialer खुल गया। कॉल लगाने से पहले नंबर जाँच लें।"
                 } catch (_: Exception) {
                     status.text = "Dialer नहीं खुल सका।"
                     tts.speak("Dialer नहीं खुल सका।")
+                }
+            }
+            .setNeutralButton("SMS") { _, _ ->
+                showSmsEditor(name, number)
+            }
+            .show()
+    }
+
+    private fun showSmsEditor(name: String, number: String) {
+        val editor = EditText(this).apply {
+            hint = "अपना संदेश लिखें"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            minLines = 3
+            maxLines = 6
+            gravity = android.view.Gravity.TOP
+            setPadding(32, 24, 32, 24)
+        }
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("SMS लिखें")
+            .setMessage("प्राप्तकर्ता: $name\\n$number")
+            .setView(editor)
+            .setNegativeButton("रद्द करें", null)
+            .setPositiveButton("Preview देखें", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener {
+                    val message = SmsDraftValidator.normalize(
+                        editor.text.toString()
+                    )
+
+                    if (message == null) {
+                        status.text = "संदेश खाली या अमान्य है। 1000 अक्षरों तक लिखें।"
+                        tts.speak("कृपया सही संदेश लिखें।")
+                        return@setOnClickListener
+                    }
+
+                    dialog.dismiss()
+                    showSmsPreview(name, number, message)
+                }
+        }
+        dialog.show()
+    }
+
+    private fun showSmsPreview(name: String, number: String, message: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("SMS भेजने से पहले जाँचें")
+            .setMessage("प्राप्तकर्ता: $name\\nनंबर: $number\\n\\nसंदेश:\\n$message\\n\\nअगली स्क्रीन पर SMS ऐप खुलेगी। संदेश भेजने के लिए आपको खुद Send दबाना होगा।")
+            .setNegativeButton("रद्द करें", null)
+            .setPositiveButton("SMS ऐप खोलें") { _, _ ->
+                try {
+                    val smsIntent = Intent(
+                        Intent.ACTION_SENDTO,
+                        Uri.fromParts("smsto", number, null)
+                    ).putExtra("sms_body", message)
+
+                    startActivity(smsIntent)
+                    status.text = "SMS ऐप खुल गई। भेजने से पहले संदेश जाँचें और खुद Send दबाएँ।"
+                    tts.speak("SMS ऐप खुल गई है। संदेश जाँचकर खुद भेजें।")
+                } catch (_: Exception) {
+                    status.text = "SMS ऐप नहीं खुल सकी।"
+                    tts.speak("SMS ऐप नहीं खुल सकी।")
                 }
             }
             .show()
