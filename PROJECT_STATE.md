@@ -1,44 +1,35 @@
 # Ask AI — Project State
 
-Updated: 20261125-083259
+Updated: 20261125-083356
 Package: com.akingstar.askai
 Repository: akingstar/AskAI
 Branch: main
-Baseline commit: 1502be130d93a3ece79cf048144541a4027f67cd
-
-## Product goal
-Hindi-first voice-first Android phone controller.
-Universal Voice Automation Engine using AccessibilityService,
-Control Discovery, ActionPlan, PlanValidator, ActionExecutor,
-Accessibility bridge and Hindi AI.
+Audit baseline: 9ab01a646102393f81557bb5ae0d822cd1498224
 
 ## Phase status
-- Phase 1 — Existing code foundation: existing project retained.
-- Phase 2 — Phone controls: existing implementation; verify coverage.
-- Phase 3 — Universal screen reading: existing accessibility foundation;
-  dynamic control inventory integration pending verification.
-- Phase 4 — Voice action engine: existing ActionPlan/validator/executor;
-  preserve current safety gates.
-- Phase 5 — App automation + Hindi AI: IN PROGRESS.
-- Phase 6 — Security + final testing: PENDING.
+- Phase 1: Existing project foundation retained.
+- Phase 2: Phone controls — coverage audit pending.
+- Phase 3: Accessibility screen reading foundation exists.
+- Phase 4: ActionPlan, PlanValidator and ActionExecutor exist.
+- Phase 5: IN PROGRESS — Universal Control Discovery.
+- Phase 6: Security and final testing pending.
 
-## Next module
+## Current module
 Universal Control Discovery:
-- Discover visible buttons, text fields, labels and scroll containers.
-- Reuse the existing AccessibilityService.
-- Avoid collecting password, OTP, PIN or payment data.
-- Keep AI output constrained by existing ActionPlan and PlanValidator.
-- Execute only through existing SafetyGate and ActionExecutor.
-- Add unit tests and GitHub Actions verification.
+- Identify the active Manifest-registered AccessibilityService.
+- Identify the ActionExecutor actually used by MainActivity.
+- Reuse the existing accessibility bridge.
+- Discover visible controls without collecting sensitive values.
+- Keep PlanValidator, SafetyGate and ActionExecutor synchronized.
+- Add tests before integration.
 
-## Baseline source inventory
-See the Phase 5 preflight backup:
-/data/data/com.termux/files/home/AskAI-phase5-preflight-20261125-083259/architecture-files.txt
+## Important discovery
+Duplicate service and executor implementations exist.
+Do not modify either until the active execution path is verified.
+
+## Audit report
+PHASE5_DISCOVERY_AUDIT.md
 
 ## Rules
-- No scratch rewrite.
-- Backup before every source change.
-- One complete module at a time.
-- No placeholder or fake functionality.
-- No APK installation before explicit user approval.
-- Android protected screens and restricted system actions remain restricted.
+Backup-first; one complete module at a time; no scratch rewrite;
+no placeholders; no APK installation before explicit approval.
