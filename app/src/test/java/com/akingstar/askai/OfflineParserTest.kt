@@ -84,6 +84,20 @@ class OfflineParserTest {
         assertEquals("photo", step?.target)
     }
 
+    @Test fun preservesHindiMatrasInDynamicCommands() {
+        val tap = OfflineParser.parse("Search बटन दबाओ")?.steps?.single()
+        val typing = OfflineParser.parse("Search में मौसम लिखो")?.steps?.single()
+        assertEquals("tap_text", tap?.action)
+        assertEquals("type_text", typing?.action)
+        assertEquals("मौसम", typing?.value)
+    }
+
+    @Test fun parsesHindiLongPressPhrase() {
+        val step = OfflineParser.parse("Photo पर लंबे समय तक दबाओ")?.steps?.single()
+        assertEquals("long_press_text", step?.action)
+        assertEquals("photo", step?.target)
+    }
+
     @Test fun rejectsMissingDynamicTarget() {
         assertNull(OfflineParser.parse("बटन दबाओ"))
         assertNull(OfflineParser.parse("type weather in"))

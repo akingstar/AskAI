@@ -4,8 +4,8 @@ import java.text.Normalizer
 import java.util.Locale
 
 object OfflineParser {
-    private fun clean(s: String) = Normalizer.normalize(s.lowercase(Locale.ROOT), Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "").replace(Regex("[^\\p{L}\\p{N} +]"), " ")
+    private fun clean(s: String) = Normalizer.normalize(s.lowercase(Locale.ROOT), Normalizer.Form.NFKC)
+        .replace(Regex("[^\\p{L}\\p{M}\\p{N} +]"), " ")
         .replace(Regex("\\s+"), " ").trim()
 
     private val commands = listOf(
@@ -101,7 +101,7 @@ object OfflineParser {
 
         Regex(
             "^(.{1,160}?)\\s+(?:(?:par|पर)\\s+)?" +
-                "(?:long press karo|long press|लंबे समय तक दबाओ)$"
+                "(?:long press करो|long press karo|long press|लंबे समय तक दबाओ)$"
         ).matchEntire(text)?.let {
             val t = target(it.groupValues[1]) ?: return null
             if (SafetyGate.isRiskyTapTarget(t)) return null
