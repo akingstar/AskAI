@@ -35,6 +35,9 @@ class MainActivity : Activity() {
     private val conversationMemory = ConversationMemory()
     private val whatsAppDraftFlow = WhatsAppDraftFlow()
     private var pendingWhatsAppNumber: String? = null
+    private var whatsAppVoiceConsent = false
+    private var whatsAppResumeListening = false
+    private var activityResumed = false
 
     private fun acquireCommandExecution(): Long? {
         val token = commandExecutionGate.tryAcquire() ?: return null
@@ -644,6 +647,7 @@ class MainActivity : Activity() {
             val granted = grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             if (granted && whatsAppDraftFlow.state != WhatsAppDraftFlow.State.IDLE) {
+                whatsAppResumeListening = false
                 showWhatsAppListeningPrompt()
             } else {
                 whatsAppDraftFlow.reset()
@@ -801,6 +805,8 @@ class MainActivity : Activity() {
             }
             .setPositiveButton("अनुमति दें") { _, _ ->
                 whatsAppDraftFlow.begin()
+                whatsAppVoiceConsent = true
+                whatsAppResumeListening = false
                 if (ContextCompat.checkSelfPermission(
                         this, Manifest.permission.RECORD_AUDIO
                     ) == PackageManager.PERMISSION_GRANTED
@@ -816,62 +822,75 @@ class MainActivity : Activity() {
     }
 
     private fun showWhatsAppListeningPrompt() {
-        if (whatsAppDraftFlow.state == WhatsAppDraftFlow.State.IDLE) return
+        if (whatsAppDraftFlow.state == WhatsAppDraftFlow.State.IDLE ||
+            !whatsAppVoiceConsent
+        ) return
 
-        val message = if (
+        val prompt = if (
             whatsAppDraftFlow.state == WhatsAppDraftFlow.State.AWAITING_MESSAGE
         ) {
-            "सुनना शुरू करें दबाएँ और अपना संदेश बोलें।"
+            "अब अपना WhatsApp संदेश बोलिए।"
         } else {
-            "सुनना शुरू करें दबाएँ। 'हाँ' से खोलें, 'बदलो' से सुधारें या 'रद्द करो' बोलें।"
+            "अब हाँ, बदलो या रद्द करो बोलिए।"
         }
 
-        android.app.AlertDialog.Builder(this)
-            .setTitle("WhatsApp voice")
-            .setMessage(message)
-            .setNegativeButton("रद्द करें") { _, _ ->
-                whatsAppDraftFlow.reset()
-                pendingWhatsAppNumber = null
-                status.text = "WhatsApp draft रद्द कर दिया गया।"
-                tts.speak("संदेश रद्द कर दिया गया।")
-            }
-            .setPositiveButton("सुनना शुरू करें") { _, _ ->
-                if (ContextCompat.checkSelfPermission(
-                        this, Manifest.permission.RECORD_AUDIO
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    ActivityCompat.requestPermissions(
-                        this, arrayOf(Manifest.permission.RECORD_AUDIO), 102
-                    )
-                } else {
-                    val spinner = findViewById<Spinner>(R.id.languageSpinner)
-                    val index = spinner.selectedItemPosition.coerceIn(0, languages.lastIndex)
-                    speech.language = languages[index].second
-                    tts.setLanguage(speech.language)
-                    status.text = "अब बोलिए।"
-                    speech.start()
-                }
-            }
-            .show()
+        speakThenListen(prompt)
+    }
+
+    private fun speakThenListen(prompt: String) {
+        if (!whatsAppVoiceConsent ||
+            whatsAppDraftFlow.state == WhatsAppDraftFlow.State.IDLE
+        ) return
+
+        status.text = prompt
+        tts.speak(prompt) {
+            startWhatsAppListening()
+        }
+    }
+
+    private fun startWhatsAppListening() {
+        if (!whatsAppVoiceConsent ||
+            whatsAppDraftFlow.state == WhatsAppDraftFlow.State.IDLE ||
+            !activityResumed
+        ) return
+
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this, arrayOf(Manifest.permission.RECORD_AUDIO), 102
+            )
+            return
+        }
+
+        val spinner = findViewById<Spinner>(R.id.languageSpinner)
+        val index = spinner.selectedItemPosition.coerceIn(0, languages.lastIndex)
+        speech.language = languages[index].second
+        tts.setLanguage(speech.language)
+        status.text = "अब बोलिए।"
+        speech.start()
     }
 
     private fun handleWhatsAppVoiceInput(heard: String) {
+        if (!whatsAppVoiceConsent) return
+
         when (val result = whatsAppDraftFlow.accept(heard)) {
             WhatsAppDraftFlow.Result.AskForMessage -> {
-                status.text = "अब नया संदेश बोलें।"
-                tts.speak("अब नया संदेश बोलिए।")
-                showWhatsAppListeningPrompt()
+                speakThenListen("अब अपना नया संदेश बोलिए।")
             }
 
             is WhatsAppDraftFlow.Result.Preview -> {
-                status.text = "संदेश का preview तैयार है।"
-                tts.speak("आपका संदेश है। ${result.message.take(500)}")
                 showWhatsAppDraftPreview(result.message)
             }
 
-            is WhatsAppDraftFlow.Result.OpenDraft -> openWhatsAppDraft(result.message)
+            is WhatsAppDraftFlow.Result.OpenDraft -> {
+                openWhatsAppDraft(result.message)
+            }
 
             WhatsAppDraftFlow.Result.Cancelled -> {
+                whatsAppVoiceConsent = false
+                whatsAppResumeListening = false
                 pendingWhatsAppNumber = null
                 status.text = "WhatsApp संदेश रद्द कर दिया गया।"
                 tts.speak("संदेश रद्द कर दिया गया।")
@@ -879,35 +898,41 @@ class MainActivity : Activity() {
 
             WhatsAppDraftFlow.Result.RepeatPreview -> {
                 whatsAppDraftFlow.currentDraft()?.let {
-                    tts.speak("आपका संदेश है। ${it.take(500)}")
                     showWhatsAppDraftPreview(it)
                 }
             }
 
             WhatsAppDraftFlow.Result.MessageRejected -> {
-                status.text = "संदेश खाली या बहुत लंबा है। फिर बोलें।"
-                tts.speak("संदेश समझ नहीं आया। कृपया फिर बोलिए।")
-                showWhatsAppListeningPrompt()
+                speakThenListen("संदेश खाली या बहुत लंबा है। कृपया फिर बोलिए।")
             }
 
             WhatsAppDraftFlow.Result.Clarify -> {
-                status.text = "कृपया हाँ, बदलो या रद्द करो बोलें।"
-                tts.speak("कृपया हाँ, बदलो या रद्द करो बोलिए।")
-                showWhatsAppListeningPrompt()
+                speakThenListen("कृपया हाँ, बदलो या रद्द करो बोलिए।")
             }
 
-            WhatsAppDraftFlow.Result.Ignored -> Unit
+            WhatsAppDraftFlow.Result.Ignored -> {
+                speakThenListen("माफ कीजिए, समझ नहीं आया। कृपया फिर बोलिए।")
+            }
         }
     }
 
     private fun showWhatsAppDraftPreview(message: String) {
-        android.app.AlertDialog.Builder(this)
+        if (!whatsAppVoiceConsent) return
+
+        val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("WhatsApp संदेश जाँचें")
             .setMessage(
-                "संदेश:\\n\\n$message\\n\\nWhatsApp में भेजने के लिए खुद Send दबाएँ।"
+                "संदेश:\\n\\n$message\\n\\n" +
+                "आवाज़ से 'हाँ', 'बदलो' या 'रद्द करो' बोल सकते हैं। " +
+                "भेजने के लिए WhatsApp में खुद Send दबाएँ।"
             )
             .setItems(
-                arrayOf("WhatsApp में draft खोलें", "आवाज़ से पुष्टि करें", "संदेश बदलें", "रद्द करें")
+                arrayOf(
+                    "WhatsApp में draft खोलें",
+                    "आवाज़ से पुष्टि करें",
+                    "संदेश बदलें",
+                    "रद्द करें"
+                )
             ) { _, which ->
                 when (which) {
                     0 -> {
@@ -926,6 +951,8 @@ class MainActivity : Activity() {
                     }
                     else -> {
                         whatsAppDraftFlow.reset()
+                        whatsAppVoiceConsent = false
+                        whatsAppResumeListening = false
                         pendingWhatsAppNumber = null
                         status.text = "WhatsApp draft रद्द कर दिया गया।"
                         tts.speak("संदेश रद्द कर दिया गया।")
@@ -934,12 +961,24 @@ class MainActivity : Activity() {
             }
             .setOnCancelListener {
                 whatsAppDraftFlow.reset()
+                whatsAppVoiceConsent = false
+                whatsAppResumeListening = false
                 pendingWhatsAppNumber = null
             }
-            .show()
+            .create()
+
+        dialog.show()
+
+        tts.speak("आपका संदेश है। $message। " +
+            "खोलने के लिए हाँ, बदलने के लिए बदलो, रद्द करने के लिए रद्द करो बोलिए।"
+        ) {
+            startWhatsAppListening()
+        }
     }
 
     private fun openWhatsAppDraft(message: String) {
+        whatsAppVoiceConsent = false
+        whatsAppResumeListening = false
         val number = pendingWhatsAppNumber
         if (number.isNullOrBlank()) {
             whatsAppDraftFlow.reset()
@@ -1039,7 +1078,27 @@ class MainActivity : Activity() {
             .show()
     }
 
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
+        if (whatsAppResumeListening && whatsAppVoiceConsent &&
+            whatsAppDraftFlow.state != WhatsAppDraftFlow.State.IDLE &&
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            whatsAppResumeListening = false
+            showWhatsAppListeningPrompt()
+        }
+    }
+
     override fun onPause() {
+        activityResumed = false
+        if (whatsAppVoiceConsent &&
+            whatsAppDraftFlow.state != WhatsAppDraftFlow.State.IDLE
+        ) {
+            whatsAppResumeListening = true
+        }
         if (::speech.isInitialized) speech.stop()
         super.onPause()
     }
