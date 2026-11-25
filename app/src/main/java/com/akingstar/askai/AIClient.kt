@@ -86,29 +86,56 @@ object AIClient {
             }
 
             val prompt = makePrompt(text, conversation)
+            val hasOnlineProvider =
+                geminiKey.isNotBlank() || groqKey.isNotBlank() || endpoint.isNotBlank()
+            var usageLimitReached = false
+
+            // Duplicate suppression applies only to online requests.
+            // A duplicate must never be re-executed through the offline parser.
+            if (hasOnlineProvider && !AIUsageGuard.beginRequest(appContext, text)) {
+                result = AIRequestResult.DuplicateRequest
+            }
+
 
             // Priority 1: Gemini
-            if (geminiKey.isNotBlank()) {
-                val attempt = ProviderHttpClient.gemini(geminiKey, prompt)
-                if (attempt is AIRequestResult.Success) result = attempt
-                else lastFailure = attempt
+            if (result == null && !usageLimitReached && geminiKey.isNotBlank()) {
+                if (AIUsageGuard.reserveOnlineAttempt(appContext)) {
+                    val attempt = ProviderHttpClient.gemini(geminiKey, prompt)
+                    if (attempt is AIRequestResult.Success) result = attempt
+                    else lastFailure = attempt
+                } else {
+                    lastFailure = AIRequestResult.UsageLimitReached
+                    usageLimitReached = true
+                }
             }
 
             // Priority 2: Groq
-            if (result == null && groqKey.isNotBlank()) {
-                val attempt = ProviderHttpClient.groq(groqKey, prompt)
-                if (attempt is AIRequestResult.Success) result = attempt
-                else lastFailure = attempt
+            if (result == null && !usageLimitReached && groqKey.isNotBlank()) {
+                if (AIUsageGuard.reserveOnlineAttempt(appContext)) {
+                    val attempt = ProviderHttpClient.groq(groqKey, prompt)
+                    if (attempt is AIRequestResult.Success) result = attempt
+                    else lastFailure = attempt
+                } else {
+                    lastFailure = AIRequestResult.UsageLimitReached
+                    usageLimitReached = true
+                }
             }
 
             // Priority 3: HTTPS Worker
-            if (result == null && endpoint.isNotBlank()) {
+            if (result == null && !usageLimitReached && endpoint.isNotBlank()) {
                 if (!isSecureEndpoint(endpoint)) {
                     lastFailure = AIRequestResult.InvalidEndpoint
                 } else {
-                    val attempt = requestWorker(endpoint, text, conversation)
+                    val attempt = requestWorker(endpoint, text, conversation) {
+                        AIUsageGuard.reserveOnlineAttempt(appContext)
+                    }
                     if (attempt is AIRequestResult.Success) result = attempt
-                    else lastFailure = attempt
+                    else {
+                        lastFailure = attempt
+                        if (attempt == AIRequestResult.UsageLimitReached) {
+                            usageLimitReached = true
+                        }
+                    }
                 }
             }
 
@@ -120,7 +147,8 @@ object AIClient {
                 val failure = lastFailure
                 val eligibleFailure = when (failure) {
                     AIRequestResult.NetworkError,
-                    AIRequestResult.InvalidResponse -> true
+                    AIRequestResult.InvalidResponse,
+                    AIRequestResult.UsageLimitReached -> true
                     is AIRequestResult.ServerError ->
                         failure.statusCode == 429 ||
                             failure.statusCode >= 500
@@ -134,7 +162,11 @@ object AIClient {
                 }
             }
 
-            val finalResult = result ?: lastFailure
+            val finalResult = result ?: if (usageLimitReached) {
+                AIRequestResult.UsageLimitReached
+            } else {
+                lastFailure
+            }
             Handler(Looper.getMainLooper()).post {
                 callback(finalResult)
             }
@@ -144,11 +176,14 @@ object AIClient {
     private fun requestWorker(
         endpoint: String,
         text: String,
-        conversation: List<ConversationTurn>
+        conversation: List<ConversationTurn>,
+        reserveAttempt: () -> Boolean
     ): AIRequestResult {
         var lastFailure: AIRequestResult = AIRequestResult.NetworkError
 
         repeat(2) {
+            if (!reserveAttempt()) return AIRequestResult.UsageLimitReached
+
             var connection: HttpURLConnection? = null
             try {
                 connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {

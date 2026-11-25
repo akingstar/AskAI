@@ -553,6 +553,18 @@ class MainActivity : Activity() {
                                     releaseCommandExecution(executionToken)
                                 }
 
+                                AIRequestResult.DuplicateRequest -> {
+                                    status.text = "यह कमांड अभी भेजी गई थी। थोड़ी देर बाद दोबारा कोशिश करें।"
+                                    tts.speak("यह कमांड अभी भेजी गई थी। कृपया थोड़ी देर रुकें।")
+                                    releaseCommandExecution(executionToken)
+                                }
+
+                                AIRequestResult.UsageLimitReached -> {
+                                    status.text = "आज की 20 ऑनलाइन AI कोशिशें पूरी हो गईं। Offline कमांड उपलब्ध हैं।"
+                                    tts.speak("आज की ऑनलाइन AI सीमा पूरी हो गई है। ऑफलाइन कमांड अभी भी उपलब्ध हैं।")
+                                    releaseCommandExecution(executionToken)
+                                }
+
                                 AIRequestResult.InvalidEndpoint -> {
                                     status.text = "Worker URL गलत है। HTTPS URL जाँचें।"
                                     tts.speak("AI सेवा का सुरक्षित पता सही नहीं है।")

@@ -37,6 +37,8 @@ internal sealed class AIRequestResult {
     ) : AIRequestResult()
 
     object UnrecognizedCommand : AIRequestResult()
+    object UsageLimitReached : AIRequestResult()
+    object DuplicateRequest : AIRequestResult()
     object InvalidEndpoint : AIRequestResult()
     object NetworkError : AIRequestResult()
     data class ServerError(val statusCode: Int) : AIRequestResult()

@@ -13,6 +13,7 @@ import android.widget.Toast
 class AskAISettingsActivity : Activity() {
     private lateinit var geminiStatusView: TextView
     private lateinit var groqStatusView: TextView
+    private lateinit var usageStatusView: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -39,6 +40,18 @@ class AskAISettingsActivity : Activity() {
         layout.addView(TextView(this).apply {
             text = "Ask AI सेटिंग"
             textSize = 26f
+        })
+
+        heading("AI ऑनलाइन उपयोग सीमा")
+        usageStatusView = TextView(this).apply {
+            textSize = 16f
+            setPadding(0, 4, 0, 8)
+        }
+        layout.addView(usageStatusView)
+        layout.addView(TextView(this).apply {
+            text = "रोज़ अधिकतम 20 ऑनलाइन HTTP कोशिशें। Gemini, Groq और Worker retries गिने जाते हैं। Offline कमांड इस सीमा में नहीं गिनी जातीं। यह provider की वास्तविक billing limit नहीं है।"
+            textSize = 13f
+            setPadding(0, 0, 0, 12)
         })
 
         heading("परिवार की सुरक्षा")
@@ -173,6 +186,21 @@ class AskAISettingsActivity : Activity() {
             )
         )
         refreshStatus()
+        refreshUsage()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::usageStatusView.isInitialized) refreshUsage()
+        if (::geminiStatusView.isInitialized && ::groqStatusView.isInitialized) {
+            refreshStatus()
+        }
+    }
+
+    private fun refreshUsage() {
+        val usage = AIUsageGuard.snapshot(this)
+        usageStatusView.text =
+            "आज ऑनलाइन प्रयास: ${usage.used} / ${usage.limit}\nशेष प्रयास: ${usage.remaining}"
     }
 
     private fun refreshStatus() {

@@ -97,3 +97,20 @@ no placeholders; no APK installation before explicit approval.
 - Hindi, Hinglish and English web-search queries retain their search text.
 - Main branch has not been changed by this feature branch.
 - APK installation remains deferred until explicit user approval.
+
+## AI Provider Integration + Usage & Cost Guard
+
+- Gemini → Groq → HTTPS Worker → validated offline parser priority.
+- Gemini and Groq API keys are stored using Android encrypted preferences.
+- Provider responses pass through PlanValidator before becoming executable plans.
+- API keys are sent in request headers, not URL query parameters.
+- Daily online-attempt limit: 20 per local calendar day.
+- Each outbound provider HTTP attempt is counted; Worker retries reserve separately.
+- Duplicate normalized online commands are blocked for 5 seconds using a SHA-256 fingerprint; raw command text is not stored by the duplicate guard.
+- Daily rollover resets the usage counter and duplicate fingerprint state.
+- When the online limit is reached, the offline parser remains available.
+- Settings displays today's online attempts and remaining attempts.
+- This is an app-side request limiter, not a provider billing or spending cap. Provider dashboard quota/billing controls remain necessary.
+- Usage policy tests cover the daily limit, day rollover, duplicate window, different commands and clock rollback.
+- Feature branch: ai-reliable-fallback-20261126.
+- Verification pending: GitHub Actions CI after this feature commit is pushed.
