@@ -122,10 +122,14 @@ class SpeechController(
                     val words = results?.getStringArrayList(
                         SpeechRecognizer.RESULTS_RECOGNITION
                     )
-                    val text = words?.firstOrNull()?.trim().orEmpty()
+                    val text = SpeechResultPolicy.normalize(words)
                     finish()
-                    if (text.isNotBlank()) onText(text)
-                    else onStatus("कृपया फिर बोलिए।")
+                    if (text != null) {
+                        onText(text)
+                    } else {
+                        onStatus("कृपया फिर बोलिए।")
+                        onFailure?.invoke(SpeechFailure.RETRYABLE)
+                    }
                 }
 
                 override fun onPartialResults(partialResults: Bundle?) {}
