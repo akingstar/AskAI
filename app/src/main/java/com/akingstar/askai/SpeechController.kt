@@ -8,6 +8,7 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import java.util.concurrent.atomic.AtomicLong
 
 class SpeechController(
     private val context: Context,
@@ -17,15 +18,21 @@ class SpeechController(
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var stopped = false
+    private val lifecycleGeneration = AtomicLong(0L)
 
     var language: String = "hi-IN"
 
     fun start() {
+        val request = lifecycleGeneration.incrementAndGet()
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            main.post { start() }
+            main.post { startOnMain(request) }
             return
         }
+        startOnMain(request)
+    }
 
+    private fun startOnMain(request: Long) {
+        if (lifecycleGeneration.get() != request) return
         stopped = false
         stopRecognizer()
 
@@ -38,7 +45,7 @@ class SpeechController(
             val current = SpeechRecognizer.createSpeechRecognizer(context)
             recognizer = current
 
-            fun active(): Boolean = !stopped && recognizer === current
+            fun active(): Boolean = !stopped && lifecycleGeneration.get() == request && recognizer === current
 
             fun finish() {
                 if (recognizer === current) {
@@ -134,10 +141,16 @@ class SpeechController(
     }
 
     fun stop() {
+        val request = lifecycleGeneration.incrementAndGet()
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            main.post { stop() }
+            main.post { stopOnMain(request) }
             return
         }
+        stopOnMain(request)
+    }
+
+    private fun stopOnMain(request: Long) {
+        if (lifecycleGeneration.get() != request) return
         stopped = true
         stopRecognizer()
     }

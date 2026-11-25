@@ -20,6 +20,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -27,7 +28,24 @@ class MainActivity : Activity() {
     private lateinit var speech: SpeechController
     private lateinit var tts: TextToSpeechController
     private lateinit var executor: ActionExecutor
+    private lateinit var micButton: Button
+    private val commandExecutionGate = CommandExecutionGate()
     private val conversationMemory = ConversationMemory()
+
+    private fun acquireCommandExecution(): Long? {
+        val token = commandExecutionGate.tryAcquire() ?: return null
+        if (::micButton.isInitialized && !isFinishing && !isDestroyed) {
+            micButton.isEnabled = false
+        }
+        return token
+    }
+
+    private fun releaseCommandExecution(token: Long) {
+        if (!commandExecutionGate.release(token)) return
+        if (::micButton.isInitialized && !isFinishing && !isDestroyed) {
+            micButton.isEnabled = true
+        }
+    }
     private val permissions = arrayListOf(
         Manifest.permission.RECORD_AUDIO
     )
@@ -38,6 +56,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
         status = findViewById(R.id.status)
         permissionList = findViewById(R.id.permissionList)
+        micButton = findViewById(R.id.micButton)
         val spinner = findViewById<Spinner>(R.id.languageSpinner)
         spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, languages.map { it.first })
         tts = TextToSpeechController(this) {}
@@ -48,6 +67,10 @@ class MainActivity : Activity() {
         var lastPlan: ActionPlan? = null
 
         speech = SpeechController(this, { heard ->
+            if (commandExecutionGate.isBusy()) {
+                status.text = "पिछला काम अभी चल रहा है। कृपया उसके पूरा होने तक रुकें।"
+                tts.speak("पिछला काम अभी चल रहा है।")
+            } else {
             status.text = "आपने कहा: $heard"
             val command = heard.trim()
             val saveMatch = Regex(
@@ -336,6 +359,13 @@ class MainActivity : Activity() {
                                     if (isRetry) "जी, सिर्फ असफल काम दोबारा करने की कोशिश कर रहा हूँ।"
                                     else "जी, रूटीन शुरू कर रहा हूँ।"
                                 )
+                                val executionToken = acquireCommandExecution()
+                                if (executionToken == null) {
+                                    val message = "दूसरा काम अभी चल रहा है। कृपया उसके पूरा होने तक रुकें।"
+                                    status.text = message
+                                    tts.speak(message)
+                                } else {
+                                try {
                                 val started = automationHistory.beginExecution(
                                     name = name,
                                     planJson = savedPlanJson,
@@ -343,6 +373,7 @@ class MainActivity : Activity() {
                                     merge = isRetry
                                 )
                                 if (!started) {
+                                    releaseCommandExecution(executionToken)
                                     val message = "Execution record सुरक्षित नहीं हो सका। कोई काम शुरू नहीं किया गया।"
                                     status.text = message
                                     tts.speak(message)
@@ -360,6 +391,7 @@ class MainActivity : Activity() {
                                             )
                                         },
                                         onComplete = { result ->
+                                            try {
                                             val finalStatus = when {
                                                 result.failedSteps == 0 &&
                                                     result.cancelledSteps == 0 &&
@@ -395,8 +427,24 @@ class MainActivity : Activity() {
                                                     else -> "रूटीन आंशिक रूप से पूरी हुई।"
                                                 }
                                             )
+                                            } catch (_: Exception) {
+                        runCatching {
+                            status.text = "रूटीन पूरी करते समय रिकॉर्ड या स्थिति अपडेट नहीं हो सकी।"
+                        }
+                        runCatching {
+                            tts.speak("रूटीन पूरी करते समय समस्या हुई।")
+                        }
+                    } finally {
+                                                releaseCommandExecution(executionToken)
+                                            }
                                         }
                                     )
+                                }
+                                } catch (_: Exception) {
+                                    releaseCommandExecution(executionToken)
+                                    status.text = "रूटीन शुरू नहीं हो सकी। रिकॉर्ड और स्थिति जाँचें।"
+                                    tts.speak("रूटीन शुरू नहीं हो सकी।")
+                                }
                                 }
                             }
                         }
@@ -433,54 +481,108 @@ class MainActivity : Activity() {
             }
 
             if (!handled) {
-                AIClient.request(this@MainActivity, heard, conversationMemory.snapshot()) { result ->
-                    if (isFinishing || isDestroyed) return@request
-                    when (result) {
-                        is AIRequestResult.Success -> {
-                            val plan = result.plan
-                            lastPlan = plan
-                            status.text = if (result.offline) {
-                                "Offline कमांड मिली: ${plan.steps.size} काम"
-                            } else {
-                                "कमांड मिली: ${plan.steps.size} काम"
+                val executionToken = acquireCommandExecution()
+                if (executionToken == null) {
+                    val message = "दूसरा काम अभी चल रहा है। कृपया उसके पूरा होने तक रुकें।"
+                    status.text = message
+                    tts.speak(message)
+                } else {
+                    val callbackHandled = AtomicBoolean(false)
+                    var executionStarted = false
+                    try {
+                        AIClient.request(this@MainActivity, heard, conversationMemory.snapshot()) { result ->
+                            if (!callbackHandled.compareAndSet(false, true)) return@request
+                            if (isFinishing || isDestroyed) {
+                                releaseCommandExecution(executionToken)
+                                return@request
                             }
-                            tts.speak("जी, समझ गया।")
-                            executor.execute(plan) { summary ->
-                                if (!result.offline && !isFinishing && !isDestroyed) {
-                                    conversationMemory.record(heard, summary)
+
+                            try {
+                            when (result) {
+                                is AIRequestResult.Success -> {
+                                    val plan = result.plan
+                                    lastPlan = plan
+                                    status.text = if (result.offline) {
+                                        "Offline कमांड मिली: ${plan.steps.size} काम"
+                                    } else {
+                                        "कमांड मिली: ${plan.steps.size} काम"
+                                    }
+                                    tts.speak("जी, समझ गया।")
+                                    try {
+                                        executionStarted = true
+                        executor.execute(plan) { summary ->
+                                            try {
+                                            if (!result.offline && !isFinishing && !isDestroyed) {
+                                                conversationMemory.record(heard, summary)
+                                            }
+                                            } finally {
+                                                releaseCommandExecution(executionToken)
+                                            }
+                                        }
+                                    } catch (_: Exception) {
+                                        releaseCommandExecution(executionToken)
+                                        status.text = "काम शुरू नहीं हो सका। कृपया दोबारा कोशिश करें।"
+                                        tts.speak("काम शुरू नहीं हो सका।")
+                                    }
+                                }
+
+                                AIRequestResult.UnrecognizedCommand -> {
+                                    status.text = "कमांड समझ नहीं आई। कृपया दोबारा बोलें।"
+                                    tts.speak("माफ कीजिए, यह कमांड समझ नहीं आई। कृपया दोबारा बोलें।")
+                                    releaseCommandExecution(executionToken)
+                                }
+
+                                AIRequestResult.InvalidEndpoint -> {
+                                    status.text = "Worker URL गलत है। HTTPS URL जाँचें।"
+                                    tts.speak("AI सेवा का सुरक्षित पता सही नहीं है।")
+                                    releaseCommandExecution(executionToken)
+                                }
+
+                                AIRequestResult.NetworkError -> {
+                                    status.text = "इंटरनेट कनेक्शन या नेटवर्क में समस्या है।"
+                                    tts.speak("इंटरनेट कनेक्शन में समस्या है। कृपया बाद में कोशिश करें।")
+                                    releaseCommandExecution(executionToken)
+                                }
+
+                                is AIRequestResult.ServerError -> {
+                                    status.text = "AI सेवा में समस्या है। HTTP ${result.statusCode}"
+                                    tts.speak("AI सेवा अभी उपलब्ध नहीं है।")
+                                    releaseCommandExecution(executionToken)
+                                }
+
+                                AIRequestResult.InvalidResponse -> {
+                                    status.text = "AI से सही जवाब नहीं मिला। कृपया दोबारा कोशिश करें।"
+                                    tts.speak("AI से सही जवाब नहीं मिला।")
+                                    releaseCommandExecution(executionToken)
                                 }
                             }
+                        } catch (_: Exception) {
+                            if (!executionStarted) {
+                                releaseCommandExecution(executionToken)
+                            }
+                            runCatching {
+                                status.text = "AI request संभालने में समस्या हुई। कृपया दोबारा कोशिश करें।"
+                            }
+                            runCatching {
+                                tts.speak("AI request में समस्या हुई।")
+                            }
                         }
 
-                        AIRequestResult.UnrecognizedCommand -> {
-                            status.text = "कमांड समझ नहीं आई। कृपया दोबारा बोलें।"
-                            tts.speak("माफ कीजिए, यह कमांड समझ नहीं आई। कृपया दोबारा बोलें।")
                         }
-
-                        AIRequestResult.InvalidEndpoint -> {
-                            status.text = "Worker URL गलत है। HTTPS URL जाँचें।"
-                            tts.speak("AI सेवा का सुरक्षित पता सही नहीं है।")
-                        }
-
-                        AIRequestResult.NetworkError -> {
-                            status.text = "इंटरनेट कनेक्शन या नेटवर्क में समस्या है।"
-                            tts.speak("इंटरनेट कनेक्शन में समस्या है। कृपया बाद में कोशिश करें।")
-                        }
-
-                        is AIRequestResult.ServerError -> {
-                            status.text = "AI सेवा में समस्या है। HTTP ${result.statusCode}"
-                            tts.speak("AI सेवा अभी उपलब्ध नहीं है।")
-                        }
-
-                        AIRequestResult.InvalidResponse -> {
-                            status.text = "AI से सही जवाब नहीं मिला। कृपया दोबारा कोशिश करें।"
-                            tts.speak("AI से सही जवाब नहीं मिला।")
-                        }
+                    } catch (_: Exception) {
+                        releaseCommandExecution(executionToken)
+                        status.text = "AI request शुरू नहीं हो सकी। कृपया दोबारा कोशिश करें।"
+                        tts.speak("AI सेवा से संपर्क नहीं हो सका।")
                     }
                 }
             }
+            }
         }, { status.text = it })
-        findViewById<Button>(R.id.micButton).setOnClickListener {
+        micButton.setOnClickListener {
+            if (commandExecutionGate.isBusy()) {
+                status.text = "पिछला काम अभी चल रहा है।"
+                return@setOnClickListener
+            }
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 speech.language = languages[spinner.selectedItemPosition].second
                 tts.setLanguage(speech.language)
@@ -532,7 +634,7 @@ class MainActivity : Activity() {
             val granted = grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
 
-            if (granted) {
+            if (granted && !commandExecutionGate.isBusy()) {
                 val spinner = findViewById<Spinner>(R.id.languageSpinner)
                 val selectedIndex = spinner.selectedItemPosition
                     .coerceIn(0, languages.lastIndex)
