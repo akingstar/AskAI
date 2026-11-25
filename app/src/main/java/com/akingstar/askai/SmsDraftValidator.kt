@@ -10,7 +10,7 @@ object SmsDraftValidator {
         if (message.isEmpty() || message.length > 1000) return null
 
         if (message.any {
-            Character.isISOControl(it) && it != '\\n' && it != '\\t'
+            Character.isISOControl(it) && it != '\n' && it != '\t'
         }) return null
 
         return message
