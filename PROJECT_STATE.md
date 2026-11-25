@@ -73,10 +73,10 @@ no placeholders; no APK installation before explicit approval.
 - Unit tests cover narration, duplicates, disabled controls and malformed inventory.
 
 ## Dynamic Hindi / Hinglish Voice Commands
-- Status: implemented; GitHub Actions verification pending.
-- Offline parser supports explicit tap, long-press and text-entry patterns.
-- Supports Hindi, Hinglish and English command forms.
-- Generic or missing targets are rejected.
-- Risky tap/long-press targets and sensitive typing targets/values are rejected.
-- Existing ActionPlan and AIClient JSON schema remain unchanged.
-- Runtime AccessibilityService still performs exact unique visible-control matching.
+- Status: feature branch CI passed.
+- CI run: 45543393917
+- Unicode-preserving Hindi normalization implemented.
+- Hindi tap, typing and long-press regression tests added.
+- Sensitive input and risky-target checks retained.
+- APK not installed; merge and main CI pending.
+- Updated: 20261125-092745
