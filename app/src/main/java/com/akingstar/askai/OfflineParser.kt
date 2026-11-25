@@ -63,6 +63,71 @@ object OfflineParser {
         return markers.any { padded.contains(it) }
     }
 
+
+    private fun parseDynamic(part: String): ActionStep? {
+        val text = clean(part)
+
+        fun target(raw: String): String? {
+            val value = clean(raw)
+            if (value.isBlank() || value.length > 160) return null
+            if (value in setOf(
+                "button", "बटन", "field", "फील्ड",
+                "input", "text field", "screen", "स्क्रीन"
+            )) return null
+            return value
+        }
+
+        fun typed(field: String, content: String): ActionStep? {
+            val t = target(field) ?: return null
+            val v = clean(content)
+            if (v.isBlank() || v.length > 500) return null
+            if (SafetyGate.isSensitiveInputTarget(t) ||
+                SensitiveDataFilter.containsSensitive(v)
+            ) return null
+            return ActionStep("type_text", t, v)
+        }
+
+        Regex(
+            "^(.{1,160}?)\\\\s+(?:में|me)\\\\s+(.{1,500}?)\\\\s+" +
+                "(?:लिखो|लिखें|टाइप करो|भर दो|likho|type karo)$"
+        ).matchEntire(text)?.let {
+            return typed(it.groupValues[1], it.groupValues[2])
+        }
+
+        Regex("^type\\\\s+(.{1,500}?)\\\\s+in\\\\s+(.{1,160})$")
+            .matchEntire(text)?.let {
+                return typed(it.groupValues[2], it.groupValues[1])
+            }
+
+        Regex(
+            "^(.{1,160}?)\\\\s+(?:(?:par|पर)\\\\s+)?" +
+                "(?:long press karo|long press|लंबे समय तक दबाओ)$"
+        ).matchEntire(text)?.let {
+            val t = target(it.groupValues[1]) ?: return null
+            if (SafetyGate.isRiskyTapTarget(t)) return null
+            return ActionStep("long_press_text", t)
+        }
+
+        Regex(
+            "^(.{1,160}?)\\\\s+(?:(?:button|बटन)\\\\s+)?" +
+                "(?:(?:par|पर)\\\\s+)?" +
+                "(?:दबाओ|दबाएं|क्लिक करो|click karo|click|tap karo|tap)$"
+        ).matchEntire(text)?.let {
+            val t = target(it.groupValues[1]) ?: return null
+            if (SafetyGate.isRiskyTapTarget(t)) return null
+            return ActionStep("tap_text", t)
+        }
+
+        Regex("^(?:tap|click)\\\\s+(.{1,160})$")
+            .matchEntire(text)?.let {
+                val t = target(it.groupValues[1]) ?: return null
+                if (SafetyGate.isRiskyTapTarget(t)) return null
+                return ActionStep("tap_text", t)
+            }
+
+        return null
+    }
+
     fun parse(input: String): ActionPlan? {
         val text = clean(input)
         if (text.isBlank() || hasUnsupportedCondition(text)) return null
@@ -70,6 +135,8 @@ object OfflineParser {
         if (parts.isEmpty() || parts.size > 5) return null
 
         val steps = parts.map { part ->
+            parseDynamic(part)?.let { return@map it }
+
             val found = commands.mapNotNull { group ->
                 val score = group.drop(1).maxOfOrNull { key ->
                     when {
