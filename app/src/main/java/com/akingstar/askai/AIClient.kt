@@ -3,6 +3,7 @@ package com.akingstar.askai
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -24,28 +25,31 @@ object AIClient {
         }
     }
 
-    private fun readBounded(input: java.io.InputStream, maxBytes: Int): String {
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(4096)
-
-        while (true) {
-            val count = input.read(buffer)
-            if (count < 0) break
-            if (output.size() + count > maxBytes) {
-                throw IOException("Response too large")
-            }
-            output.write(buffer, 0, count)
-        }
-
-        return output.toString("UTF-8")
-    }
-
     private fun validatedOfflinePlan(text: String): ActionPlan? {
         return try {
-            val candidate = OfflineParser.parse(text) ?: return null
-            PlanValidator.parse(PlanValidator.encode(candidate))
+            val candidate = OfflineParser.parse(text)
+            if (candidate == null) null
+            else PlanValidator.parse(PlanValidator.encode(candidate))
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun makePrompt(
+        text: String,
+        conversation: List<ConversationTurn>
+    ): String {
+        val context = conversation.takeLast(3).joinToString("\n") { turn ->
+            "Previous command: ${turn.command.take(300)}\nOutcome: ${turn.outcome.take(300)}"
+        }
+        return buildString {
+            if (context.isNotBlank()) {
+                append("Recent conversation context:\n")
+                append(context)
+                append("\n\n")
+            }
+            append("User command:\n")
+            append(text.take(4000))
         }
     }
 
@@ -55,111 +59,169 @@ object AIClient {
         conversation: List<ConversationTurn> = emptyList(),
         callback: (AIRequestResult) -> Unit
     ) {
-        val prefs = context.getSharedPreferences("askai", Context.MODE_PRIVATE)
-        val endpoint = prefs.getString("worker_url", "").orEmpty().trim()
+        val appContext = context.applicationContext
+        val endpoint = appContext.getSharedPreferences(
+            "askai", Context.MODE_PRIVATE
+        ).getString("worker_url", "").orEmpty().trim()
 
-        if (AIClientFallbackPolicy.shouldUseOfflineParser(endpoint)) {
-            val plan = validatedOfflinePlan(text)
-            callback(
-                if (plan != null) AIRequestResult.Success(plan, offline = true)
-                else AIRequestResult.UnrecognizedCommand
-            )
-            return
-        }
-
-        if (!isSecureEndpoint(endpoint)) {
-            callback(AIRequestResult.InvalidEndpoint)
+        if (text.isBlank() || text.length > 4000) {
+            Handler(Looper.getMainLooper()).post {
+                callback(AIRequestResult.UnrecognizedCommand)
+            }
             return
         }
 
         Thread {
             var result: AIRequestResult? = null
             var lastFailure: AIRequestResult = AIRequestResult.NetworkError
+            var geminiKey = ""
+            var groqKey = ""
 
-            repeat(2) {
-                if (result == null) {
-                    var connection: HttpURLConnection? = null
-                    try {
-                        connection = URL(endpoint).openConnection() as HttpURLConnection
-                        connection.requestMethod = "POST"
-                        connection.connectTimeout = 9000
-                        connection.readTimeout = 12000
-                        connection.doOutput = true
-                        connection.doInput = true
-                        connection.useCaches = false
-                        connection.instanceFollowRedirects = false
-                        connection.setRequestProperty("Content-Type", "application/json")
-                        connection.setRequestProperty("Accept", "application/json")
+            try {
+                val keys = ProviderKeyStore(appContext)
+                geminiKey = keys.getGeminiKey()
+                groqKey = keys.getGroqKey()
+            } catch (_: Exception) {
+                // Fail closed: never use plaintext key storage.
+            }
 
-                        val contextArray = org.json.JSONArray()
-                        conversation.takeLast(3).forEach { turn ->
-                            contextArray.put(
-                                JSONObject()
-                                    .put("command", turn.command)
-                                    .put("outcome", turn.outcome)
-                            )
-                        }
+            val prompt = makePrompt(text, conversation)
 
-                        val body = JSONObject()
-                            .put("text", text)
-                            .put("system", SYSTEM_PROMPT)
-                            .put("context", contextArray)
-                            .toString()
+            // Priority 1: Gemini
+            if (geminiKey.isNotBlank()) {
+                val attempt = ProviderHttpClient.gemini(geminiKey, prompt)
+                if (attempt is AIRequestResult.Success) result = attempt
+                else lastFailure = attempt
+            }
 
-                        connection.outputStream.use {
-                            it.write(body.toByteArray(Charsets.UTF_8))
-                        }
+            // Priority 2: Groq
+            if (result == null && groqKey.isNotBlank()) {
+                val attempt = ProviderHttpClient.groq(groqKey, prompt)
+                if (attempt is AIRequestResult.Success) result = attempt
+                else lastFailure = attempt
+            }
 
-                        val code = connection.responseCode
-                        if (code in 200..299) {
-                            val raw = connection.inputStream.use {
-                                readBounded(it, 64 * 1024)
-                            }
+            // Priority 3: HTTPS Worker
+            if (result == null && endpoint.isNotBlank()) {
+                if (!isSecureEndpoint(endpoint)) {
+                    lastFailure = AIRequestResult.InvalidEndpoint
+                } else {
+                    val attempt = requestWorker(endpoint, text, conversation)
+                    if (attempt is AIRequestResult.Success) result = attempt
+                    else lastFailure = attempt
+                }
+            }
 
-                            val plan = try {
-                                val response = JSONObject(raw)
-                                val planJson = response.opt("result") as? String
-                                if (planJson.isNullOrBlank()) null
-                                else PlanValidator.parse(planJson)
-                            } catch (_: Exception) {
-                                null
-                            }
+            // Priority 4: local offline parser
+            if (result == null) {
+                val noConfiguredProvider =
+                    geminiKey.isBlank() && groqKey.isBlank() && endpoint.isBlank()
 
-                            result = if (plan != null) {
-                                AIRequestResult.Success(plan)
-                            } else {
-                                lastFailure = AIRequestResult.InvalidResponse
-                                null
-                            }
-                        } else {
-                            lastFailure = AIRequestResult.ServerError(code)
-                            if (code in 400..499 && code != 429) {
-                                result = lastFailure
-                            }
-                        }
-                    } catch (_: Exception) {
-                        lastFailure = AIRequestResult.NetworkError
-                    } finally {
-                        connection?.disconnect()
+                val failure = lastFailure
+                val eligibleFailure = when (failure) {
+                    AIRequestResult.NetworkError,
+                    AIRequestResult.InvalidResponse -> true
+                    is AIRequestResult.ServerError ->
+                        failure.statusCode == 429 ||
+                            failure.statusCode >= 500
+                    else -> false
+                }
+
+                if (noConfiguredProvider || eligibleFailure) {
+                    result = validatedOfflinePlan(text)?.let {
+                        AIRequestResult.Success(it, offline = true)
                     }
                 }
             }
 
-            val originalResult = result ?: lastFailure
-            val finalResult =
-                if (result == null &&
-                    AIClientFallbackPolicy.shouldAttemptFallback(endpoint, originalResult)
-                ) {
-                    validatedOfflinePlan(text)?.let {
-                        AIRequestResult.Success(it, offline = true)
-                    } ?: originalResult
-                } else {
-                    originalResult
-                }
-
+            val finalResult = result ?: lastFailure
             Handler(Looper.getMainLooper()).post {
                 callback(finalResult)
             }
         }.start()
+    }
+
+    private fun requestWorker(
+        endpoint: String,
+        text: String,
+        conversation: List<ConversationTurn>
+    ): AIRequestResult {
+        var lastFailure: AIRequestResult = AIRequestResult.NetworkError
+
+        repeat(2) {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 9000
+                    readTimeout = 12000
+                    doOutput = true
+                    doInput = true
+                    useCaches = false
+                    instanceFollowRedirects = false
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Accept", "application/json")
+                }
+
+                val contextArray = JSONArray()
+                conversation.takeLast(3).forEach { turn ->
+                    contextArray.put(
+                        JSONObject()
+                            .put("command", turn.command.take(300))
+                            .put("outcome", turn.outcome.take(300))
+                    )
+                }
+
+                val body = JSONObject()
+                    .put("text", text)
+                    .put("system", SYSTEM_PROMPT)
+                    .put("context", contextArray)
+
+                connection.outputStream.use {
+                    it.write(body.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                val code = connection.responseCode
+                if (code in 200..299) {
+                    val raw = connection.inputStream.use {
+                        readBounded(it, 64 * 1024)
+                    }
+                    val plan = try {
+                        val response = JSONObject(raw)
+                        val planJson = response.opt("result") as? String
+                        if (planJson.isNullOrBlank()) null
+                        else PlanValidator.parse(planJson)
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    return if (plan != null) AIRequestResult.Success(plan)
+                    else AIRequestResult.InvalidResponse
+                }
+
+                lastFailure = AIRequestResult.ServerError(code)
+                if (code in 400..499 && code != 429) return lastFailure
+            } catch (_: Exception) {
+                lastFailure = AIRequestResult.NetworkError
+            } finally {
+                connection?.disconnect()
+            }
+        }
+
+        return lastFailure
+    }
+
+    private fun readBounded(input: java.io.InputStream, maxBytes: Int): String {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(4096)
+
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            if (output.size() + count > maxBytes) throw IOException("Response too large")
+            output.write(buffer, 0, count)
+        }
+
+        return output.toString("UTF-8")
     }
 }

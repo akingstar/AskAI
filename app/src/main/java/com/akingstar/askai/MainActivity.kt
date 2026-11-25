@@ -649,6 +649,12 @@ class MainActivity : Activity() {
             text = "Accessibility सेवा सेटिंग"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
+        permissionList.addView(Button(this).apply {
+            text = "Ask AI Provider सेटिंग"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, AskAISettingsActivity::class.java))
+            }
+        })
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
