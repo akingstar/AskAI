@@ -212,7 +212,7 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
         } else null
 
         val riskyUiTap =
-            step.action == "tap_text" &&
+            step.action in setOf("tap_text", "long_press_text") &&
                 SafetyGate.isRiskyTapTarget(step.target)
 
         val sensitiveField =
