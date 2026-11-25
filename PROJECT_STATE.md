@@ -33,3 +33,12 @@ PHASE5_DISCOVERY_AUDIT.md
 ## Rules
 Backup-first; one complete module at a time; no scratch rewrite;
 no placeholders; no APK installation before explicit approval.
+
+## Universal Control Discovery
+- Status: implemented; GitHub Actions verification pending.
+- Active service: AskAIAccessibilityService.
+- Inventory: clickable controls, editable fields, password-field type, scroll areas, labels, resource IDs and enabled state.
+- Privacy: editable text values are excluded; password labels are generic; labels pass through SensitiveDataFilter.
+- Limits: 300 visited nodes, 100 reported controls, depth 20; accessibility events throttled to 350 ms.
+- Voice/action entry: discover_controls.
+- Tests: ControlDiscoveryTest.

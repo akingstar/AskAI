@@ -14,7 +14,19 @@ class AskAIAccessibilityService : AccessibilityService() {
         activeService = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    @Volatile private var latestControlInventory: String = "[]"
+    private var lastDiscoveryEventTime = 0L
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        event ?: return
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        ) return
+        if (event.eventTime - lastDiscoveryEventTime < 350L) return
+        lastDiscoveryEventTime = event.eventTime
+        latestControlInventory = discoverControls()
+    }
     override fun onInterrupt() {}
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
@@ -65,6 +77,9 @@ class AskAIAccessibilityService : AccessibilityService() {
 
             "read_screen" ->
                 readScreen().takeIf { it.isNotBlank() }
+
+            "discover_controls" ->
+                discoverControls()
 
             else -> null
         }
@@ -156,6 +171,70 @@ class AskAIAccessibilityService : AccessibilityService() {
             else -> return false
         }
         return node.performAction(action)
+    }
+
+    fun discoverControls(): String {
+        val root = rootInActiveWindow ?: return "[]"
+        val controls = mutableListOf<DiscoveredControl>()
+        var visited = 0
+
+        fun visit(node: AccessibilityNodeInfo, depth: Int) {
+            if (depth > 20 || visited >= 300 || controls.size >= 100) return
+            visited++
+
+            val password = node.isPassword
+            val editable = node.isEditable
+            val rawLabel = when {
+                password -> "Password field"
+                editable -> listOfNotNull(
+                    node.hintText?.toString(),
+                    node.contentDescription?.toString()
+                ).firstOrNull()
+                else -> listOfNotNull(
+                    node.text?.toString(),
+                    node.contentDescription?.toString()
+                ).firstOrNull()
+            }.orEmpty()
+
+            val label = SensitiveDataFilter.mask(rawLabel)
+                .replace(Regex("[\\\\r\\\\n\\\\t]+"), " ")
+                .take(120)
+
+            val role = when {
+                password -> "password_field"
+                editable -> "text_field"
+                node.isScrollable -> "scroll_area"
+                node.isCheckable -> "checkable"
+                node.isClickable -> "clickable"
+                else -> "text"
+            }
+
+            if (role != "text" || label.isNotBlank()) {
+                controls.add(
+                    DiscoveredControl(
+                        index = controls.size,
+                        role = role,
+                        label = label,
+                        viewId = if (password) "" else
+                            (node.viewIdResourceName ?: "").take(160),
+                        clickable = node.isClickable,
+                        editable = editable,
+                        scrollable = node.isScrollable,
+                        enabled = node.isEnabled
+                    )
+                )
+            }
+
+            for (i in 0 until node.childCount) {
+                if (visited >= 300 || controls.size >= 100) break
+                node.getChild(i)?.let { visit(it, depth + 1) }
+            }
+        }
+
+        visit(root, 0)
+        return ControlDiscovery.encode(controls).also {
+            latestControlInventory = it
+        }
     }
 
     fun readScreen(): String {
