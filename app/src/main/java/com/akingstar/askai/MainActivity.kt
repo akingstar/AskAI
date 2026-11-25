@@ -38,6 +38,8 @@ class MainActivity : Activity() {
     private var whatsAppVoiceConsent = false
     private var whatsAppResumeListening = false
     private var activityResumed = false
+    private var whatsAppRecognitionRetries = 0
+    private val maxWhatsAppRecognitionRetries = 2
 
     private fun acquireCommandExecution(): Long? {
         val token = commandExecutionGate.tryAcquire() ?: return null
@@ -76,6 +78,7 @@ class MainActivity : Activity() {
 
         speech = SpeechController(this, { heard ->
             if (whatsAppDraftFlow.state != WhatsAppDraftFlow.State.IDLE) {
+                whatsAppRecognitionRetries = 0
                 handleWhatsAppVoiceInput(heard)
             } else if (commandExecutionGate.isBusy()) {
                 status.text = "पिछला काम अभी चल रहा है। कृपया उसके पूरा होने तक रुकें।"
@@ -650,6 +653,10 @@ class MainActivity : Activity() {
                 whatsAppResumeListening = false
                 showWhatsAppListeningPrompt()
             } else {
+                whatsAppVoiceConsent = false
+                whatsAppResumeListening = false
+                whatsAppRecognitionRetries = 0
+                speech.onFailure = null
                 whatsAppDraftFlow.reset()
                 pendingWhatsAppNumber = null
                 status.text = "माइक्रोफोन की अनुमति नहीं मिली।"
@@ -868,6 +875,54 @@ class MainActivity : Activity() {
         val index = spinner.selectedItemPosition.coerceIn(0, languages.lastIndex)
         speech.language = languages[index].second
         tts.setLanguage(speech.language)
+
+        speech.onFailure = { failure ->
+            if (whatsAppVoiceConsent &&
+                whatsAppDraftFlow.state != WhatsAppDraftFlow.State.IDLE
+            ) {
+                when (failure) {
+                    SpeechFailure.RETRYABLE -> {
+                        if (whatsAppRecognitionRetries < maxWhatsAppRecognitionRetries &&
+                            activityResumed
+                        ) {
+                            whatsAppRecognitionRetries++
+                            speakThenListen(
+                                "आवाज़ साफ़ नहीं मिली। " +
+                                "कृपया फिर बोलिए।"
+                            )
+                        } else {
+                            status.text =
+                                "दोबारा आवाज़ नहीं समझ आई। माइक दबाकर फिर कोशिश करें।"
+                            tts.speak(
+                                "आवाज़ समझ नहीं आई। " +
+                                "फिर कोशिश करने के लिए माइक दबाएँ।"
+                            )
+                        }
+                    }
+
+                    SpeechFailure.PERMISSION -> {
+                        whatsAppVoiceConsent = false
+                        whatsAppResumeListening = false
+                        whatsAppRecognitionRetries = 0
+                        whatsAppDraftFlow.reset()
+                        pendingWhatsAppNumber = null
+                        status.text = "माइक्रोफोन की अनुमति जरूरी है।"
+                        tts.speak("माइक्रोफोन की अनुमति जरूरी है।")
+                    }
+
+                    SpeechFailure.UNAVAILABLE,
+                    SpeechFailure.OTHER -> {
+                        status.text =
+                            "Voice सेवा उपलब्ध नहीं है। माइक से दोबारा कोशिश करें।"
+                        tts.speak(
+                            "Voice सेवा अभी उपलब्ध नहीं है। " +
+                            "माइक दबाकर दोबारा कोशिश करें।"
+                        )
+                    }
+                }
+            }
+        }
+
         status.text = "अब बोलिए।"
         speech.start()
     }

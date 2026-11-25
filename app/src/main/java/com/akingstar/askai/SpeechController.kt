@@ -10,6 +10,13 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import java.util.concurrent.atomic.AtomicLong
 
+enum class SpeechFailure {
+    RETRYABLE,
+    PERMISSION,
+    UNAVAILABLE,
+    OTHER
+}
+
 class SpeechController(
     private val context: Context,
     private val onText: (String) -> Unit,
@@ -21,6 +28,7 @@ class SpeechController(
     private val lifecycleGeneration = AtomicLong(0L)
 
     var language: String = "hi-IN"
+    var onFailure: ((SpeechFailure) -> Unit)? = null
 
     fun start() {
         val request = lifecycleGeneration.incrementAndGet()
@@ -38,6 +46,7 @@ class SpeechController(
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             onStatus("इस फोन में Speech Recognition उपलब्ध नहीं है।")
+            onFailure?.invoke(SpeechFailure.UNAVAILABLE)
             return
         }
 
@@ -91,6 +100,21 @@ class SpeechController(
                             "Voice पहचानने में समस्या हुई। फिर कोशिश करें।"
                     }
                     onStatus(message)
+
+                    val failure = when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH,
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY ->
+                            SpeechFailure.RETRYABLE
+
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                            SpeechFailure.PERMISSION
+
+                        else -> SpeechFailure.OTHER
+                    }
+                    onFailure?.invoke(failure)
                 }
 
                 override fun onResults(results: Bundle?) {
@@ -125,9 +149,11 @@ class SpeechController(
         } catch (_: SecurityException) {
             stopRecognizer()
             onStatus("माइक्रोफोन की अनुमति जरूरी है।")
+            onFailure?.invoke(SpeechFailure.PERMISSION)
         } catch (_: RuntimeException) {
             stopRecognizer()
             onStatus("Voice सेवा शुरू नहीं हो सकी। फिर कोशिश करें।")
+            onFailure?.invoke(SpeechFailure.OTHER)
         }
     }
 
