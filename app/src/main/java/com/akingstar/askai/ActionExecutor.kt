@@ -33,7 +33,8 @@ data class ExecutionSummary(
 class ActionExecutor(
     private val context: Context,
     private val speak: (String) -> Unit,
-    private val requestCameraPermission: () -> Unit = {}
+    private val requestCameraPermission: () -> Unit = {},
+    private val requestWriteSettingsPermission: () -> Unit = {}
 ) {
     private val packages = mapOf(
         "youtube" to "com.google.android.youtube",
@@ -274,6 +275,41 @@ class ActionExecutor(
             return
         }
 
+        if (step.action == "brightness") {
+            if (!Settings.System.canWrite(context)) {
+                speak("Brightness बदलने के लिए Modify system settings अनुमति दें, फिर command दोबारा बोलें।")
+                requestWriteSettingsPermission()
+                next(
+                    false, "BLOCKED",
+                    "Write system settings permission required; user must retry",
+                    succeeded, failed + 1, cancelled, skipped
+                )
+                return
+            }
+
+            val mode = try {
+                Settings.System.getInt(
+                    context.contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE
+                )
+            } catch (_: Exception) {
+                -1
+            }
+
+            if (!BrightnessPolicy.isManualMode(mode)) {
+                speak("Auto brightness चालू है। Display Settings में इसे Manual करें, फिर command दोबारा बोलें।")
+                runCatching {
+                    openIntent(Intent(Settings.ACTION_DISPLAY_SETTINGS))
+                }
+                next(
+                    false, "BLOCKED",
+                    "Automatic brightness active or mode unavailable",
+                    succeeded, failed + 1, cancelled, skipped
+                )
+                return
+            }
+        }
+
         if (SafetyGate.needsConfirmation(step.action, step.target) || appWarning != null) {
             AlertDialog.Builder(context)
                 .setTitle("Ask AI — पुष्टि जरूरी")
@@ -420,7 +456,7 @@ class ActionExecutor(
             "dnd" -> openIntent(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
             "ringer" -> openIntent(Intent(Settings.ACTION_SOUND_SETTINGS))
             "rotation" -> openIntent(Intent(Settings.ACTION_DISPLAY_SETTINGS))
-            "brightness" -> openIntent(Intent(Settings.ACTION_DISPLAY_SETTINGS))
+            "brightness" -> setBrightness(step.value)
             "alarm" -> openIntent(Intent(AlarmClock.ACTION_SET_ALARM))
             "timer" -> openIntent(Intent(AlarmClock.ACTION_SET_TIMER))
             "youtube" -> {
@@ -464,6 +500,62 @@ class ActionExecutor(
                 false
             }
         }
+    }
+
+    private fun setBrightness(value: String): Boolean {
+        if (!Settings.System.canWrite(context)) {
+            speak("System settings की अनुमति उपलब्ध नहीं है।")
+            return false
+        }
+
+        val mode = Settings.System.getInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS_MODE,
+            -1
+        )
+        if (!BrightnessPolicy.isManualMode(mode)) {
+            speak("Auto brightness चालू है। पहले Manual brightness चुनें।")
+            return false
+        }
+
+        val targetPercent = when (value) {
+            "up", "down" -> {
+                val currentRaw = Settings.System.getInt(
+                    context.contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS
+                )
+                val currentPercent =
+                    BrightnessPolicy.fromSystemValue(currentRaw) ?: return false
+                BrightnessPolicy.adjust(currentPercent, value) ?: return false
+            }
+            else -> BrightnessPolicy.parsePercent(value) ?: return false
+        }
+
+        val systemValue =
+            BrightnessPolicy.toSystemValue(targetPercent) ?: return false
+
+        val written = Settings.System.putInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS,
+            systemValue
+        )
+        if (!written) {
+            speak("Brightness update नहीं हो सका।")
+            return false
+        }
+
+        val verified = Settings.System.getInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS,
+            -1
+        )
+        if (verified != systemValue) {
+            speak("Brightness update verify नहीं हो सका।")
+            return false
+        }
+
+        speak("Screen brightness $targetPercent प्रतिशत कर दी।")
+        return true
     }
 
     private fun accessibilityAction(

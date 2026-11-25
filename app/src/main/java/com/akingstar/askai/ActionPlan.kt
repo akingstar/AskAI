@@ -79,6 +79,12 @@ object PlanValidator {
                     (target.isBlank() || value.isBlank())
                 ) return null
 
+                if (action == "brightness" &&
+                    (target.isNotBlank() ||
+                        (value !in setOf("up", "down") &&
+                            BrightnessPolicy.parsePercent(value) == null))
+                ) return null
+
                 if (action in setOf(
                     "scroll_up", "scroll_down", "home", "back",
                     "recents", "notifications", "quick_settings",

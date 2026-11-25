@@ -87,7 +87,14 @@ class MainActivity : Activity() {
                 this,
                 arrayOf(Manifest.permission.CAMERA),
                 103
-            ) }
+            ) },
+            {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")
+                )
+                startActivity(intent)
+            }
         )
         val automationStore = AutomationStore(this)
         val automationHistory = AutomationHistoryStore(this)

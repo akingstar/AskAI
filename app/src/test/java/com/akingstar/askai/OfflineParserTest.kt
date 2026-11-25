@@ -173,4 +173,51 @@ class OfflineParserTest {
         assertNull(OfflineParser.parse("Password में hello लिखो"))
     }
 
+    @Test fun parsesBrightnessPercentCommands() {
+        val cases = listOf(
+            "brightness 30 percent kar do" to "30",
+            "Brightness 70%" to "70",
+            "screen brightness 45 set karo" to "45",
+            "ब्राइटनेस 60 प्रतिशत कर दो" to "60",
+            "रोशनी 25 प्रतिशत" to "25"
+        )
+        cases.forEach { (command, expected) ->
+            val step = OfflineParser.parse(command)?.steps?.single()
+            assertEquals(command, "brightness", step?.action)
+            assertEquals(command, "", step?.target)
+            assertEquals(command, expected, step?.value)
+            assertNotNull(
+                command,
+                PlanValidator.parse(
+                    PlanValidator.encode(ActionPlan("hi-IN", listOf(step!!)))
+                )
+            )
+        }
+    }
+
+    @Test fun parsesBrightnessIncreaseAndDecrease() {
+        assertEquals(
+            "up",
+            OfflineParser.parse("brightness badhao")?.steps?.single()?.value
+        )
+        assertEquals(
+            "down",
+            OfflineParser.parse("brightness kam karo")?.steps?.single()?.value
+        )
+        assertEquals(
+            "up",
+            OfflineParser.parse("ब्राइटनेस बढ़ाओ")?.steps?.single()?.value
+        )
+        assertEquals(
+            "down",
+            OfflineParser.parse("रोशनी घटाओ")?.steps?.single()?.value
+        )
+    }
+
+    @Test fun rejectsOutOfRangeBrightnessCommands() {
+        assertNull(OfflineParser.parse("brightness 0 percent"))
+        assertNull(OfflineParser.parse("brightness 101 percent"))
+        assertNull(OfflineParser.parse("brightness 150"))
+    }
+
 }

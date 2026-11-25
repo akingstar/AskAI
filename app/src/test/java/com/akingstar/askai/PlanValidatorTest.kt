@@ -43,6 +43,23 @@ class PlanValidatorTest {
         assertNull(PlanValidator.parse(navWithTarget))
     }
 
+    @Test fun validatesBrightnessActionArguments() {
+        val valid = listOf("1", "50", "100", "up", "down")
+        valid.forEach { value ->
+            val json = """{"language":"hi-IN","steps":[{"action":"brightness","target":"","value":"$value"}]}"""
+            assertNotNull("brightness $value", PlanValidator.parse(json))
+        }
+
+        val invalid = listOf("0", "101", "-1", "50.5", "", "automatic")
+        invalid.forEach { value ->
+            val json = """{"language":"hi-IN","steps":[{"action":"brightness","target":"","value":"$value"}]}"""
+            assertNull("brightness $value", PlanValidator.parse(json))
+        }
+
+        val target = """{"language":"hi-IN","steps":[{"action":"brightness","target":"screen","value":"50"}]}"""
+        assertNull(PlanValidator.parse(target))
+    }
+
     @Test fun acceptsExactSchema() {
         val p = """{"language":"hi-IN","steps":[{"action":"torch","target":"","value":""}]}"""
         assertNotNull(PlanValidator.parse(p))

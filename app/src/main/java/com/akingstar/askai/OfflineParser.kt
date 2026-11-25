@@ -102,6 +102,28 @@ object OfflineParser {
     private fun parseDynamic(part: String): ActionStep? {
         val text = clean(part)
 
+        val brightnessNames = "(?:screen\\s+)?(?:brightness|ब्राइटनेस|रोशनी)"
+        Regex(
+            "^$brightnessNames\\s+(\\d{1,3})(?:\\s+(?:percent|प्रतिशत))?" +
+                "(?:\\s+(?:कर दो|करो|set करो|set कर दो|सेट करो|सेट कर दो))?$"
+        ).matchEntire(text)?.let {
+            val percent = BrightnessPolicy.parsePercent(it.groupValues[1])
+                ?: return null
+            return ActionStep("brightness", value = percent.toString())
+        }
+
+        Regex(
+            "^$brightnessNames\\s+(?:बढ़ाओ|बढ़ाओ|बढ़ा दो|badhao|increase|up)$"
+        ).matchEntire(text)?.let {
+            return ActionStep("brightness", value = "up")
+        }
+
+        Regex(
+            "^$brightnessNames\\s+(?:कम करो|घटाओ|ghatao|kam karo|decrease|down)$"
+        ).matchEntire(text)?.let {
+            return ActionStep("brightness", value = "down")
+        }
+
         fun target(raw: String): String? {
             val value = clean(raw)
             if (value.isBlank() || value.length > 160) return null
