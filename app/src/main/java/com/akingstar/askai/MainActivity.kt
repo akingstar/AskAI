@@ -38,8 +38,7 @@ class MainActivity : Activity() {
     private var whatsAppVoiceConsent = false
     private var whatsAppResumeListening = false
     private var activityResumed = false
-    private var whatsAppRecognitionRetries = 0
-    private val maxWhatsAppRecognitionRetries = 2
+    private val whatsAppSpeechRetryPolicy = WhatsAppSpeechRetryPolicy()
 
     private fun acquireCommandExecution(): Long? {
         val token = commandExecutionGate.tryAcquire() ?: return null
@@ -78,7 +77,7 @@ class MainActivity : Activity() {
 
         speech = SpeechController(this, { heard ->
             if (whatsAppDraftFlow.state != WhatsAppDraftFlow.State.IDLE) {
-                whatsAppRecognitionRetries = 0
+                whatsAppSpeechRetryPolicy.onSuccess()
                 handleWhatsAppVoiceInput(heard)
             } else if (commandExecutionGate.isBusy()) {
                 status.text = "पिछला काम अभी चल रहा है। कृपया उसके पूरा होने तक रुकें।"
@@ -658,6 +657,7 @@ class MainActivity : Activity() {
                 whatsAppRecognitionRetries = 0
                 speech.onFailure = null
                 whatsAppDraftFlow.reset()
+                whatsAppSpeechRetryPolicy.reset()
                 pendingWhatsAppNumber = null
                 status.text = "माइक्रोफोन की अनुमति नहीं मिली।"
                 tts.speak("माइक्रोफोन की अनुमति नहीं मिली।")
@@ -808,9 +808,11 @@ class MainActivity : Activity() {
             )
             .setNegativeButton("रद्द करें") { _, _ ->
                 whatsAppDraftFlow.reset()
+                whatsAppSpeechRetryPolicy.reset()
                 pendingWhatsAppNumber = null
             }
             .setPositiveButton("अनुमति दें") { _, _ ->
+                whatsAppSpeechRetryPolicy.reset()
                 whatsAppDraftFlow.begin()
                 whatsAppVoiceConsent = true
                 whatsAppResumeListening = false
@@ -882,10 +884,9 @@ class MainActivity : Activity() {
             ) {
                 when (failure) {
                     SpeechFailure.RETRYABLE -> {
-                        if (whatsAppRecognitionRetries < maxWhatsAppRecognitionRetries &&
-                            activityResumed
+                        if (activityResumed &&
+                            whatsAppSpeechRetryPolicy.shouldRetry()
                         ) {
-                            whatsAppRecognitionRetries++
                             speakThenListen(
                                 "आवाज़ साफ़ नहीं मिली। " +
                                 "कृपया फिर बोलिए।"
@@ -903,8 +904,8 @@ class MainActivity : Activity() {
                     SpeechFailure.PERMISSION -> {
                         whatsAppVoiceConsent = false
                         whatsAppResumeListening = false
-                        whatsAppRecognitionRetries = 0
                         whatsAppDraftFlow.reset()
+                        whatsAppSpeechRetryPolicy.reset()
                         pendingWhatsAppNumber = null
                         status.text = "माइक्रोफोन की अनुमति जरूरी है।"
                         tts.speak("माइक्रोफोन की अनुमति जरूरी है।")
@@ -1006,6 +1007,7 @@ class MainActivity : Activity() {
                     }
                     else -> {
                         whatsAppDraftFlow.reset()
+                        whatsAppSpeechRetryPolicy.reset()
                         whatsAppVoiceConsent = false
                         whatsAppResumeListening = false
                         pendingWhatsAppNumber = null
@@ -1016,6 +1018,7 @@ class MainActivity : Activity() {
             }
             .setOnCancelListener {
                 whatsAppDraftFlow.reset()
+                whatsAppSpeechRetryPolicy.reset()
                 whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
                 pendingWhatsAppNumber = null
@@ -1037,6 +1040,7 @@ class MainActivity : Activity() {
         val number = pendingWhatsAppNumber
         if (number.isNullOrBlank()) {
             whatsAppDraftFlow.reset()
+            whatsAppSpeechRetryPolicy.reset()
             status.text = "संपर्क नंबर उपलब्ध नहीं है।"
             tts.speak("संपर्क नंबर उपलब्ध नहीं है।")
             return
@@ -1045,6 +1049,7 @@ class MainActivity : Activity() {
         val digits = number.filter { it.isDigit() }
         if (digits.length !in 7..15) {
             whatsAppDraftFlow.reset()
+            whatsAppSpeechRetryPolicy.reset()
             pendingWhatsAppNumber = null
             status.text = "WhatsApp नंबर मान्य नहीं है।"
             tts.speak("WhatsApp नंबर मान्य नहीं है।")
@@ -1067,6 +1072,7 @@ class MainActivity : Activity() {
         } finally {
             pendingWhatsAppNumber = null
             whatsAppDraftFlow.reset()
+            whatsAppSpeechRetryPolicy.reset()
         }
     }
 
