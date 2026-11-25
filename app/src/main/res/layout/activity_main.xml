@@ -21,6 +21,10 @@
             android:layout_height="220dp" android:text="🎙\nबोलिए"
             android:textSize="30sp" android:textStyle="bold"
             android:backgroundTint="#075E54" android:textColor="#FFFFFF"/>
+        <Button android:id="@+id/chooseContact"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/choose_contact"
+            android:layout_marginTop="12dp"/>
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="@string/language" android:textSize="18sp"
             android:textStyle="bold" android:paddingTop="18dp"/>

@@ -7,4 +7,5 @@
     <string name="check_permissions">फिर जाँचें</string>
     <string name="permissions_title">आवश्यक अनुमतियाँ</string>
     <string name="worker_url">AI Worker URL (वैकल्पिक)</string>
+    <string name="choose_contact">संपर्क चुनें / कॉल करें</string>
 </resources>

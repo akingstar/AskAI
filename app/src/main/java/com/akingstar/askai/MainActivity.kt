@@ -7,9 +7,11 @@ import com.akingstar.askai.automation.RoutineScheduler
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
@@ -50,6 +52,7 @@ class MainActivity : Activity() {
         Manifest.permission.RECORD_AUDIO
     )
     private val languages = listOf("हिन्दी" to "hi-IN", "English" to "en-IN")
+    private val contactPickRequestCode = 2026
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -589,6 +592,9 @@ class MainActivity : Activity() {
                 speech.start()
             } else ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 100)
         }
+        findViewById<Button>(R.id.chooseContact).setOnClickListener {
+            launchContactPicker()
+        }
         findViewById<Button>(R.id.checkPermissions).setOnClickListener { showPermissions() }
         val prefs = getSharedPreferences("askai", MODE_PRIVATE)
         val url = findViewById<EditText>(R.id.workerUrl)
@@ -649,6 +655,99 @@ class MainActivity : Activity() {
         }
 
         showPermissions()
+    }
+
+    private fun launchContactPicker() {
+        val intent = Intent(
+            Intent.ACTION_PICK,
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+        try {
+            startActivityForResult(intent, contactPickRequestCode)
+        } catch (_: Exception) {
+            status.text = "इस फोन में संपर्क चुनने की सुविधा उपलब्ध नहीं है।"
+            tts.speak("संपर्क चुनने की सुविधा उपलब्ध नहीं है।")
+        }
+    }
+
+    @Deprecated("Uses the platform contact picker result")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != contactPickRequestCode || resultCode != RESULT_OK) return
+
+        val selected = data?.data?.let { uri ->
+            try {
+                contentResolver.query(
+                    uri,
+                    arrayOf(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    ),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (!cursor.moveToFirst()) {
+                        null
+                    } else {
+                        val nameIndex = cursor.getColumnIndex(
+                            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                        )
+                        val numberIndex = cursor.getColumnIndex(
+                            ContactsContract.CommonDataKinds.Phone.NUMBER
+                        )
+                        val name = if (nameIndex >= 0) {
+                            cursor.getString(nameIndex).orEmpty()
+                        } else ""
+                        val number = if (numberIndex >= 0) {
+                            cursor.getString(numberIndex).orEmpty()
+                        } else ""
+                        name to number
+                    }
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        if (selected == null) {
+            status.text = "संपर्क का नंबर नहीं मिल सका।"
+            tts.speak("संपर्क का नंबर नहीं मिल सका।")
+            return
+        }
+
+        val (name, rawNumber) = selected
+        val number = PhoneNumberValidator.normalize(rawNumber)
+
+        if (number == null) {
+            status.text = "चुने गए संपर्क का नंबर मान्य नहीं है।"
+            tts.speak("यह फोन नंबर मान्य नहीं है।")
+            return
+        }
+
+        val displayName = name.ifBlank { "चुना गया संपर्क" }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("कॉल करने की पुष्टि")
+            .setMessage("$displayName\n$number\n\nDialer खुलेगा। कॉल लगाने से पहले आप नंबर जाँच सकते हैं।")
+            .setNegativeButton("रद्द करें", null)
+            .setPositiveButton("Dialer खोलें") { _, _ ->
+                try {
+                    val dialIntent = Intent(
+                        Intent.ACTION_DIAL,
+                        Uri.fromParts("tel", number, null)
+                    )
+                    startActivity(dialIntent)
+                    status.text = "Dialer खुल गया। कॉल लगाने से पहले नंबर जाँच लें।"
+                } catch (_: Exception) {
+                    status.text = "Dialer नहीं खुल सका।"
+                    tts.speak("Dialer नहीं खुल सका।")
+                }
+            }
+            .show()
     }
 
     override fun onPause() {
