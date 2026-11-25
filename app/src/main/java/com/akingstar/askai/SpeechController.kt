@@ -3,6 +3,7 @@ package com.akingstar.askai
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
@@ -26,6 +27,7 @@ class SpeechController(
     private var recognizer: SpeechRecognizer? = null
     private var stopped = false
     private val lifecycleGeneration = AtomicLong(0L)
+    private var recognitionTimeout: Runnable? = null
 
     var language: String = "hi-IN"
     var onFailure: ((SpeechFailure) -> Unit)? = null
@@ -37,6 +39,11 @@ class SpeechController(
             return
         }
         startOnMain(request)
+    }
+
+    private fun cancelRecognitionTimeout() {
+        recognitionTimeout?.let { main.removeCallbacks(it) }
+        recognitionTimeout = null
     }
 
     private fun startOnMain(request: Long) {
@@ -58,6 +65,7 @@ class SpeechController(
 
             fun finish() {
                 if (recognizer === current) {
+                    cancelRecognitionTimeout()
                     recognizer = null
                     try { current.destroy() } catch (_: RuntimeException) {}
                 }
@@ -149,7 +157,19 @@ class SpeechController(
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
 
+            val startedAt = SystemClock.elapsedRealtime()
             current.startListening(intent)
+
+            val timeout = Runnable {
+                val elapsed = SystemClock.elapsedRealtime() - startedAt
+                if (active() && SpeechTimeoutPolicy.hasExpired(elapsed)) {
+                    finish()
+                    onStatus("आवाज़ सुनने का समय पूरा हुआ। कृपया फिर कोशिश करें।")
+                    onFailure?.invoke(SpeechFailure.RETRYABLE)
+                }
+            }
+            recognitionTimeout = timeout
+            main.postDelayed(timeout, SpeechTimeoutPolicy.TIMEOUT_MS)
         } catch (_: SecurityException) {
             stopRecognizer()
             onStatus("माइक्रोफोन की अनुमति जरूरी है।")
@@ -162,6 +182,7 @@ class SpeechController(
     }
 
     private fun stopRecognizer() {
+        cancelRecognitionTimeout()
         val old = recognizer
         recognizer = null
         if (old != null) {
