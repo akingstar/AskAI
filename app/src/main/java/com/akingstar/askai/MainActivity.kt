@@ -34,11 +34,20 @@ class MainActivity : Activity() {
     private val commandExecutionGate = CommandExecutionGate()
     private val conversationMemory = ConversationMemory()
     private val whatsAppDraftFlow = WhatsAppDraftFlow()
+    private val whatsAppVoiceSessionGuard = WhatsAppVoiceSessionGuard()
     private var pendingWhatsAppNumber: String? = null
     private var whatsAppVoiceConsent = false
     private var whatsAppResumeListening = false
     private var activityResumed = false
     private val whatsAppSpeechRetryPolicy = WhatsAppSpeechRetryPolicy()
+
+    private fun invalidateWhatsAppVoiceSession() {
+        whatsAppVoiceSessionGuard.invalidate()
+        if (::speech.isInitialized) {
+            speech.onFailure = null
+            speech.stop()
+        }
+    }
 
     private fun acquireCommandExecution(): Long? {
         val token = commandExecutionGate.tryAcquire() ?: return null
@@ -652,7 +661,8 @@ class MainActivity : Activity() {
                 whatsAppResumeListening = false
                 showWhatsAppListeningPrompt()
             } else {
-                whatsAppVoiceConsent = false
+                invalidateWhatsAppVoiceSession()
+        whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
                 speech.onFailure = null
                 whatsAppDraftFlow.reset()
@@ -806,11 +816,14 @@ class MainActivity : Activity() {
                 "WhatsApp में भेजने के लिए आपको खुद Send दबाना होगा।"
             )
             .setNegativeButton("रद्द करें") { _, _ ->
+                invalidateWhatsAppVoiceSession()
                 whatsAppDraftFlow.reset()
                 whatsAppSpeechRetryPolicy.reset()
                 pendingWhatsAppNumber = null
             }
             .setPositiveButton("अनुमति दें") { _, _ ->
+                invalidateWhatsAppVoiceSession()
+                whatsAppVoiceSessionGuard.begin()
                 whatsAppSpeechRetryPolicy.reset()
                 whatsAppDraftFlow.begin()
                 whatsAppVoiceConsent = true
@@ -851,13 +864,18 @@ class MainActivity : Activity() {
         ) return
 
         status.text = prompt
+        val sessionId = whatsAppVoiceSessionGuard.currentSessionId()
+            ?: return
         tts.speak(prompt) {
-            startWhatsAppListening()
+            if (whatsAppVoiceSessionGuard.isActive(sessionId)) {
+                startWhatsAppListening(sessionId)
+            }
         }
     }
 
-    private fun startWhatsAppListening() {
-        if (!whatsAppVoiceConsent ||
+    private fun startWhatsAppListening(sessionId: Long) {
+        if (!whatsAppVoiceSessionGuard.isActive(sessionId) ||
+            !whatsAppVoiceConsent ||
             whatsAppDraftFlow.state == WhatsAppDraftFlow.State.IDLE ||
             !activityResumed
         ) return
@@ -878,7 +896,8 @@ class MainActivity : Activity() {
         tts.setLanguage(speech.language)
 
         speech.onFailure = { failure ->
-            if (whatsAppVoiceConsent &&
+            if (whatsAppVoiceSessionGuard.isActive(sessionId) &&
+                whatsAppVoiceConsent &&
                 whatsAppDraftFlow.state != WhatsAppDraftFlow.State.IDLE
             ) {
                 when (failure) {
@@ -901,7 +920,8 @@ class MainActivity : Activity() {
                     }
 
                     SpeechFailure.PERMISSION -> {
-                        whatsAppVoiceConsent = false
+                        invalidateWhatsAppVoiceSession()
+        whatsAppVoiceConsent = false
                         whatsAppResumeListening = false
                         whatsAppDraftFlow.reset()
                         whatsAppSpeechRetryPolicy.reset()
@@ -944,7 +964,8 @@ class MainActivity : Activity() {
             }
 
             WhatsAppDraftFlow.Result.Cancelled -> {
-                whatsAppVoiceConsent = false
+                invalidateWhatsAppVoiceSession()
+        whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
                 pendingWhatsAppNumber = null
                 status.text = "WhatsApp संदेश रद्द कर दिया गया।"
@@ -973,6 +994,8 @@ class MainActivity : Activity() {
 
     private fun showWhatsAppDraftPreview(message: String) {
         if (!whatsAppVoiceConsent) return
+        val sessionId = whatsAppVoiceSessionGuard.currentSessionId()
+            ?: return
 
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("WhatsApp संदेश जाँचें")
@@ -1007,7 +1030,8 @@ class MainActivity : Activity() {
                     else -> {
                         whatsAppDraftFlow.reset()
                         whatsAppSpeechRetryPolicy.reset()
-                        whatsAppVoiceConsent = false
+                        invalidateWhatsAppVoiceSession()
+        whatsAppVoiceConsent = false
                         whatsAppResumeListening = false
                         pendingWhatsAppNumber = null
                         status.text = "WhatsApp draft रद्द कर दिया गया।"
@@ -1018,7 +1042,8 @@ class MainActivity : Activity() {
             .setOnCancelListener {
                 whatsAppDraftFlow.reset()
                 whatsAppSpeechRetryPolicy.reset()
-                whatsAppVoiceConsent = false
+                invalidateWhatsAppVoiceSession()
+        whatsAppVoiceConsent = false
                 whatsAppResumeListening = false
                 pendingWhatsAppNumber = null
             }
@@ -1029,11 +1054,14 @@ class MainActivity : Activity() {
         tts.speak("आपका संदेश है। $message। " +
             "खोलने के लिए हाँ, बदलने के लिए बदलो, रद्द करने के लिए रद्द करो बोलिए।"
         ) {
-            startWhatsAppListening()
+            if (whatsAppVoiceSessionGuard.isActive(sessionId)) {
+                startWhatsAppListening(sessionId)
+            }
         }
     }
 
     private fun openWhatsAppDraft(message: String) {
+        invalidateWhatsAppVoiceSession()
         whatsAppVoiceConsent = false
         whatsAppResumeListening = false
         val number = pendingWhatsAppNumber
