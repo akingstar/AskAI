@@ -111,6 +111,64 @@ class OfflineParserTest {
         assertNull(OfflineParser.parse("Delete पर long press करो"))
     }
 
+    @Test fun rejectsStaticCommandWordsInsideUnrelatedSentences() {
+        assertNull(OfflineParser.parse("please check my battery status"))
+        assertNull(OfflineParser.parse("the wifi signal is weak"))
+        assertNull(OfflineParser.parse("my location is not updating"))
+        assertNull(OfflineParser.parse("battery 20 percent"))
+    }
+
+    @Test fun acceptsKnownCommandWithRecognizedImperativeSuffix() {
+        assertEquals("torch", OfflineParser.parse("टॉर्च जलाओ")?.steps?.single()?.action)
+        assertEquals("torch", OfflineParser.parse("torch jalao")?.steps?.single()?.action)
+        assertEquals("torch_off", OfflineParser.parse("torch band")?.steps?.single()?.action)
+    }
+
+    @Test fun staticActionsUseEmptyArgumentsWhereExpected() {
+        val cases = listOf(
+            "टॉर्च जलाओ" to "torch",
+            "open camera" to "camera",
+            "go home" to "home",
+            "read screen" to "read_screen",
+            "wifi" to "wifi_settings",
+            "battery" to "battery"
+        )
+
+        cases.forEach { (command, expectedAction) ->
+            val step = OfflineParser.parse(command)?.steps?.single()
+            assertEquals(command, expectedAction, step?.action)
+            assertEquals(command, "", step?.target)
+            assertEquals(command, "", step?.value)
+            assertNotNull(command, PlanValidator.parse(
+                PlanValidator.encode(ActionPlan("en-IN", listOf(step!!)))
+            ))
+        }
+    }
+
+    @Test fun youtubeAndMapsOpenCommandsUseCanonicalValues() {
+        val youtube = OfflineParser.parse("youtube kholo")?.steps?.single()
+        assertEquals("youtube", youtube?.action)
+        assertEquals("youtube", youtube?.value)
+
+        val maps = OfflineParser.parse("maps kholo")?.steps?.single()
+        assertEquals("maps", maps?.action)
+        assertEquals("maps", maps?.value)
+    }
+
+    @Test fun webSearchPreservesTheActualSearchQuery() {
+        val english = OfflineParser.parse("search weather today")?.steps?.single()
+        assertEquals("web", english?.action)
+        assertEquals("weather today", english?.value)
+
+        val hinglish = OfflineParser.parse("google par search delhi weather")?.steps?.single()
+        assertEquals("web", hinglish?.action)
+        assertEquals("delhi weather", hinglish?.value)
+
+        val hindi = OfflineParser.parse("खोजो मौसम")?.steps?.single()
+        assertEquals("web", hindi?.action)
+        assertEquals("मौसम", hindi?.value)
+    }
+
     @Test fun rejectsSensitiveTypingTarget() {
         assertNull(OfflineParser.parse("Password में hello लिखो"))
     }

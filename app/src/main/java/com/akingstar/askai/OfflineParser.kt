@@ -37,7 +37,6 @@ object OfflineParser {
         listOf("network", "network", "नेटवर्क"),
         listOf("youtube", "youtube kholo", "यूट्यूब खोलो"),
         listOf("maps", "maps kholo", "गूगल मैप खोलो", "रास्ता बताओ"),
-        listOf("web", "search", "google par search", "खोजो", "सर्च करो"),
         listOf("music", "music", "गाना चलाओ", "म्यूजिक"),
         listOf("phonepe", "phonepe", "फोन पे"),
         listOf("paytm", "paytm", "पेटीएम"),
@@ -47,6 +46,24 @@ object OfflineParser {
         listOf("jio", "myjio", "माय जिओ"),
         listOf("airtel", "airtel thanks", "एयरटेल")
     )
+
+    private fun matchesCommandAlias(part: String, rawKey: String): Boolean {
+        val key = clean(rawKey)
+        if (key.isBlank()) return false
+        if (part == key) return true
+        if (!part.startsWith("$key ")) return false
+
+        val suffix = part.removePrefix("$key ").trim()
+        val allowedSuffixes = setOf(
+            "खोलो", "खोल दो", "खोलें", "खोलिए",
+            "जलाओ", "jalao", "चालू करो", "on करो",
+            "बंद", "बंद करो", "बंद कर दो", "band", "band karo",
+            "दिखाओ", "बताओ", "चलाओ", "लो", "करो", "कर दो",
+            "बढ़ाओ", "बढ़ा दो", "कम करो", "घटाओ",
+            "settings kholo", "settings खोलो"
+        )
+        return suffix in allowedSuffixes
+    }
 
     private fun hasUnsupportedCondition(text: String): Boolean {
         val markers = listOf(
@@ -63,6 +80,24 @@ object OfflineParser {
         return markers.any { padded.contains(it) }
     }
 
+
+    private fun parseWebSearch(part: String): ActionStep? {
+        val prefixes = listOf(
+            "google par search ",
+            "google पर search ",
+            "google par khojo ",
+            "google पर खोजो ",
+            "search ",
+            "खोजो ",
+            "सर्च करो "
+        )
+
+        val prefix = prefixes.firstOrNull { part.startsWith(it) } ?: return null
+        val query = part.removePrefix(prefix).trim()
+
+        if (query.isBlank() || query.length > 500) return null
+        return ActionStep("web", value = query)
+    }
 
     private fun parseDynamic(part: String): ActionStep? {
         val text = clean(part)
@@ -136,13 +171,12 @@ object OfflineParser {
 
         val steps = parts.map { part ->
             parseDynamic(part)?.let { return@map it }
+            parseWebSearch(part)?.let { return@map it }
 
             val found = commands.mapNotNull { group ->
                 val score = group.drop(1).maxOfOrNull { key ->
                     when {
-                        part == clean(key) -> 100
-                        part.contains(clean(key)) -> 85
-                        clean(key).contains(part) && part.length >= 4 -> 65
+                        matchesCommandAlias(part, key) -> 100
                         else -> 0
                     }
                 } ?: 0
@@ -150,7 +184,11 @@ object OfflineParser {
             }.maxByOrNull { it.second }?.first
                 ?: return null
 
-            ActionStep(found, "", if (found == "discover_controls") "" else part)
+            when (found) {
+                "youtube" -> ActionStep(found, value = "youtube")
+                "maps" -> ActionStep(found, value = "maps")
+                else -> ActionStep(found)
+            }
         }
         if (steps.isEmpty()) return null
         return ActionPlan(if (input.any { it.code in 0x0900..0x097F }) "hi-IN" else "en-IN", steps)

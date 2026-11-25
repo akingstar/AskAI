@@ -2,6 +2,32 @@ package com.akingstar.askai
 
 internal object AIClientFallbackPolicy {
     fun shouldUseOfflineParser(endpoint: String): Boolean = endpoint.isBlank()
+
+    fun shouldAttemptFallback(
+        endpoint: String,
+        failure: AIRequestResult
+    ): Boolean {
+        if (endpoint.isBlank()) return false
+
+        val secureEndpoint = runCatching {
+            val url = java.net.URL(endpoint)
+            url.protocol.equals("https", ignoreCase = true) &&
+                url.host.isNotBlank() &&
+                url.userInfo == null
+        }.getOrDefault(false)
+
+        if (!secureEndpoint) return false
+
+        return when (failure) {
+            AIRequestResult.NetworkError,
+            AIRequestResult.InvalidResponse -> true
+
+            is AIRequestResult.ServerError ->
+                failure.statusCode == 429 || failure.statusCode >= 500
+
+            else -> false
+        }
+    }
 }
 
 internal sealed class AIRequestResult {

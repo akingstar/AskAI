@@ -40,6 +40,15 @@ object AIClient {
         return output.toString("UTF-8")
     }
 
+    private fun validatedOfflinePlan(text: String): ActionPlan? {
+        return try {
+            val candidate = OfflineParser.parse(text) ?: return null
+            PlanValidator.parse(PlanValidator.encode(candidate))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     internal fun request(
         context: Context,
         text: String,
@@ -50,7 +59,7 @@ object AIClient {
         val endpoint = prefs.getString("worker_url", "").orEmpty().trim()
 
         if (AIClientFallbackPolicy.shouldUseOfflineParser(endpoint)) {
-            val plan = OfflineParser.parse(text)
+            val plan = validatedOfflinePlan(text)
             callback(
                 if (plan != null) AIRequestResult.Success(plan, offline = true)
                 else AIRequestResult.UnrecognizedCommand
@@ -136,7 +145,18 @@ object AIClient {
                 }
             }
 
-            val finalResult = result ?: lastFailure
+            val originalResult = result ?: lastFailure
+            val finalResult =
+                if (result == null &&
+                    AIClientFallbackPolicy.shouldAttemptFallback(endpoint, originalResult)
+                ) {
+                    validatedOfflinePlan(text)?.let {
+                        AIRequestResult.Success(it, offline = true)
+                    } ?: originalResult
+                } else {
+                    originalResult
+                }
+
             Handler(Looper.getMainLooper()).post {
                 callback(finalResult)
             }
