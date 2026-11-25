@@ -50,3 +50,14 @@ no placeholders; no APK installation before explicit approval.
 - AIClient schema instructions updated.
 - ActionExecutor routes to active Accessibility Service; read-only.
 - Validator and offline parser tests added; CI verification pending.
+
+\n## Safe Dynamic Control Matching
+- Status: implemented; GitHub Actions verification required.
+- Tap and long-press require one exact visible label match.
+- Duplicate/missing labels fail closed; no first-substring selection.
+- Tap and long-press require an enabled, visible clickable target.
+- Text entry matches exact hint/content-description only, never existing field text.
+- Password and SafetyGate-sensitive fields/values are rejected.
+- Accessibility traversal is bounded to 300 nodes and depth 20.
+- Risky labels are blocked for both tap and long-press.
+- Unit tests cover exact matching, normalization and ambiguity.

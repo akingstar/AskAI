@@ -120,35 +120,54 @@ class AskAIAccessibilityService : AccessibilityService() {
     }
 
     fun tapText(text: String): Boolean {
-        if (text.isBlank() || text.length > 100) return false
+        if (text.isBlank() || text.length > 100 ||
+            SafetyGate.isRiskyTapTarget(text)
+        ) return false
+
         val root = rootInActiveWindow ?: return false
-        val node = findText(root, text) ?: return false
+        val node = findUniqueExactText(root, text) ?: return false
         val clickable = clickableParent(node) ?: return false
+
+        if (!clickable.isEnabled || !clickable.isVisibleToUser) return false
         return clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
     fun longPressText(text: String): Boolean {
-        if (text.isBlank() || text.length > 100) return false
+        if (text.isBlank() || text.length > 100 ||
+            SafetyGate.isRiskyTapTarget(text)
+        ) return false
+
         val root = rootInActiveWindow ?: return false
-        val node = findText(root, text) ?: return false
-        return node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+        val node = findUniqueExactText(root, text) ?: return false
+        val target = longClickableParent(node) ?: return false
+
+        if (!target.isEnabled || !target.isVisibleToUser) return false
+        return target.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
     }
 
     fun setText(text: String, fieldHint: String): Boolean {
         if (text.isBlank() || text.length > 500 ||
-            fieldHint.isBlank() || fieldHint.length > 100
+            fieldHint.isBlank() || fieldHint.length > 100 ||
+            SafetyGate.isSensitiveInputTarget(fieldHint) ||
+            SensitiveDataFilter.containsSensitive(text)
         ) return false
 
         val root = rootInActiveWindow ?: return false
         val matches = findEditables(root).filter { node ->
-            listOfNotNull(
-                node.text?.toString(),
-                node.hintText?.toString(),
-                node.contentDescription?.toString()
-            ).any { it.contains(fieldHint, ignoreCase = true) }
+            if (!node.isEnabled || !node.isVisibleToUser || node.isPassword) {
+                false
+            } else {
+                val labels = listOfNotNull(
+                    node.hintText?.toString(),
+                    node.contentDescription?.toString()
+                )
+                labels.any { ControlTargetMatcher.matches(it, fieldHint) } &&
+                    labels.none { SafetyGate.isSensitiveInputTarget(it) } &&
+                    labels.none { SensitiveDataFilter.containsSensitive(it) }
+            }
         }
 
-        // Never guess when the field hint matches zero or multiple fields.
+        // Zero or multiple matches: refuse to guess.
         val node = matches.singleOrNull() ?: return false
 
         return node.performAction(
@@ -255,29 +274,56 @@ class AskAIAccessibilityService : AccessibilityService() {
 
     fun tap(x: Float, y: Float): Boolean = swipe(x, y, x, y, 80)
 
-    private fun findText(node: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
-        val label = listOfNotNull(node.text?.toString(), node.contentDescription?.toString()).joinToString(" ")
-        if (label.contains(text, true)) return node
-        for (i in 0 until node.childCount) {
-            val found = node.getChild(i)?.let { findText(it, text) }
-            if (found != null) return found
+    private fun findUniqueExactText(
+        root: AccessibilityNodeInfo,
+        target: String
+    ): AccessibilityNodeInfo? {
+        val matches = mutableListOf<AccessibilityNodeInfo>()
+        var visited = 0
+
+        fun visit(node: AccessibilityNodeInfo, depth: Int) {
+            if (depth > 20 || visited >= 300 || matches.size > 1) return
+            visited++
+
+            if (node.isVisibleToUser && node.isEnabled) {
+                val labels = listOfNotNull(
+                    node.text?.toString(),
+                    node.contentDescription?.toString()
+                )
+                if (labels.any { ControlTargetMatcher.matches(it, target) }) {
+                    matches.add(node)
+                    if (matches.size > 1) return
+                }
+            }
+
+            for (i in 0 until node.childCount) {
+                if (visited >= 300 || matches.size > 1) break
+                node.getChild(i)?.let { visit(it, depth + 1) }
+            }
         }
-        return null
+
+        visit(root, 0)
+        return matches.singleOrNull()
     }
 
     private fun findEditables(
         node: AccessibilityNodeInfo
     ): List<AccessibilityNodeInfo> {
         val result = mutableListOf<AccessibilityNodeInfo>()
+        var visited = 0
 
-        fun collectEditable(current: AccessibilityNodeInfo) {
+        fun collectEditable(current: AccessibilityNodeInfo, depth: Int) {
+            if (depth > 20 || visited >= 300) return
+            visited++
             if (current.isEditable) result.add(current)
+
             for (i in 0 until current.childCount) {
-                current.getChild(i)?.let(::collectEditable)
+                if (visited >= 300) break
+                current.getChild(i)?.let { collectEditable(it, depth + 1) }
             }
         }
 
-        collectEditable(node)
+        collectEditable(node, 0)
         return result
     }
 
@@ -294,9 +340,28 @@ class AskAIAccessibilityService : AccessibilityService() {
 
     private fun clickableParent(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
-        while (current != null) {
-            if (current.isClickable) return current
+        var depth = 0
+        while (current != null && depth < 20) {
+            if (current.isClickable && current.isEnabled &&
+                current.isVisibleToUser
+            ) return current
             current = current.parent
+            depth++
+        }
+        return null
+    }
+
+    private fun longClickableParent(
+        node: AccessibilityNodeInfo
+    ): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (current != null && depth < 20) {
+            if (current.isLongClickable && current.isEnabled &&
+                current.isVisibleToUser
+            ) return current
+            current = current.parent
+            depth++
         }
         return null
     }
