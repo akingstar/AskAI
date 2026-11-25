@@ -72,13 +72,23 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        getSharedPreferences("askai_history", MODE_PRIVATE)
+            .edit().remove("last_notification").apply()
         status = findViewById(R.id.status)
         permissionList = findViewById(R.id.permissionList)
         micButton = findViewById(R.id.micButton)
         val spinner = findViewById<Spinner>(R.id.languageSpinner)
         spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, languages.map { it.first })
         tts = TextToSpeechController(this) {}
-        executor = ActionExecutor(this) { tts.speak(it) }
+        executor = ActionExecutor(
+            this,
+            { tts.speak(it) },
+            { ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                103
+            ) }
+        )
         val automationStore = AutomationStore(this)
         val automationHistory = AutomationHistoryStore(this)
         val routineScheduler = RoutineScheduler(this)
@@ -705,6 +715,16 @@ class MainActivity : Activity() {
                 status.text = "Voice इस्तेमाल करने के लिए माइक्रोफोन की अनुमति जरूरी है।"
                 tts.speak("Voice इस्तेमाल करने के लिए माइक्रोफोन की अनुमति दें।")
             }
+        } else if (requestCode == 103) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            val message = if (granted) {
+                "Camera अनुमति मिल गई। अब टॉर्च कमांड दोबारा बोलें।"
+            } else {
+                "Camera अनुमति नहीं मिली। टॉर्च चालू नहीं की गई।"
+            }
+            status.text = message
+            tts.speak(message)
         }
 
         showPermissions()

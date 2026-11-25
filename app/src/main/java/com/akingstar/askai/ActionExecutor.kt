@@ -30,7 +30,11 @@ data class ExecutionSummary(
     val skippedSteps: Int = 0
 )
 
-class ActionExecutor(private val context: Context, private val speak: (String) -> Unit) {
+class ActionExecutor(
+    private val context: Context,
+    private val speak: (String) -> Unit,
+    private val requestCameraPermission: () -> Unit = {}
+) {
     private val packages = mapOf(
         "youtube" to "com.google.android.youtube",
         "maps" to "com.google.android.apps.maps",
@@ -249,6 +253,24 @@ class ActionExecutor(private val context: Context, private val speak: (String) -
             speak("सुरक्षा के लिए यह काम रोक दिया गया है।")
             next(false, "BLOCKED", "Safety policy blocked this action",
                 succeeded, failed + 1, cancelled, skipped)
+            return
+        }
+
+        if (step.action in setOf("torch", "torch_off") &&
+            context.checkSelfPermission(android.Manifest.permission.CAMERA) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            speak("टॉर्च चलाने के लिए Camera अनुमति चाहिए। अनुमति दें और फिर कमांड दोबारा बोलें।")
+            requestCameraPermission()
+            next(
+                false,
+                "BLOCKED",
+                "Camera runtime permission required; user must retry after granting",
+                succeeded,
+                failed + 1,
+                cancelled,
+                skipped
+            )
             return
         }
 

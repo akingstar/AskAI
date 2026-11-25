@@ -11,6 +11,11 @@ class LocalHistoryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        getSharedPreferences("askai_history", MODE_PRIVATE)
+            .edit()
+            .remove("last_notification")
+            .apply()
+
         val text = TextView(this).apply {
             textSize = 17f
             setPadding(24, 24, 24, 24)
@@ -23,18 +28,11 @@ class LocalHistoryActivity : Activity() {
 
         RoutineScheduler(this).listScheduled(routines) { reminders ->
             runOnUiThread {
-                val notificationHistory = getSharedPreferences(
-                    "askai_history",
-                    MODE_PRIVATE
-                ).getString("last_notification", "अभी कोई अतिरिक्त सूचना सेव नहीं है।")
-
                 text.text = buildString {
                     append("ASK AI — ROUTINE HISTORY\\n\\n")
                     append(history.summary())
                     append("\\n\\nSCHEDULED REMINDERS\\n\\n")
                     append(reminders)
-                    append("\\n\\nOTHER NOTIFICATIONS\\n\\n")
-                    append(notificationHistory)
                 }
             }
         }
