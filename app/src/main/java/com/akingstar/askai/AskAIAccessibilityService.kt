@@ -258,9 +258,9 @@ class AskAIAccessibilityService : AccessibilityService() {
 
     fun readScreen(): String {
         val root = rootInActiveWindow ?: return ""
-        val out = StringBuilder()
-        collect(root, out)
-        return SensitiveDataFilter.mask(out.toString()).take(4000)
+        return runCatching {
+            ScreenTextCollector.collect(AccessibilityScreenTextNode(root))
+        }.getOrDefault("")
     }
 
     fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, duration: Long = 350): Boolean {
@@ -366,9 +366,28 @@ class AskAIAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun collect(node: AccessibilityNodeInfo, out: StringBuilder) {
-        val text = node.text?.toString() ?: node.contentDescription?.toString()
-        if (!text.isNullOrBlank()) out.append(text).append(". ")
-        for (i in 0 until node.childCount) node.getChild(i)?.let { collect(it, out) }
+    private class AccessibilityScreenTextNode(
+        private val node: AccessibilityNodeInfo
+    ) : ScreenTextNode {
+        override val text: CharSequence?
+            get() = node.text
+
+        override val contentDescription: CharSequence?
+            get() = node.contentDescription
+
+        override val isPassword: Boolean
+            get() = node.isPassword
+
+        override val isEditable: Boolean
+            get() = node.isEditable
+
+        override val isVisibleToUser: Boolean
+            get() = node.isVisibleToUser
+
+        override val childCount: Int
+            get() = node.childCount
+
+        override fun childAt(index: Int): ScreenTextNode? =
+            node.getChild(index)?.let(::AccessibilityScreenTextNode)
     }
 }
