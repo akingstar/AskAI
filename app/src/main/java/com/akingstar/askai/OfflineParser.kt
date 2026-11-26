@@ -105,7 +105,7 @@ object OfflineParser {
         val brightnessNames = "(?:screen\\s+)?(?:brightness|ब्राइटनेस|रोशनी)"
         Regex(
             "^$brightnessNames\\s+(\\d{1,3})(?:\\s+(?:percent|प्रतिशत))?" +
-                "(?:\\s+(?:कर दो|करो|set करो|set कर दो|सेट करो|सेट कर दो))?$"
+                "(?:\\s+(?:कर दो|करो|kar do|kardo|karo|set करो|set कर दो|set karo|set kar do|सेट करो|सेट कर दो))?$"
         ).matchEntire(text)?.let {
             val percent = BrightnessPolicy.parsePercent(it.groupValues[1])
                 ?: return null
