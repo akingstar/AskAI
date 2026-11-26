@@ -27,7 +27,8 @@ object PlanValidator {
         "phonepe", "paytm", "gpay", "irctc", "jio", "airtel", "hotstar",
         "wifi_settings", "bluetooth_settings", "mobile_settings",
         "hotspot_settings", "airplane_settings", "location_settings",
-        "battery", "time", "date", "storage", "network", "location"
+        "battery", "time", "date", "storage", "network", "location",
+        "answer"
     )
 
     private fun safeString(value: Any?): String? {
@@ -90,6 +91,12 @@ object PlanValidator {
                     "recents", "notifications", "quick_settings",
                     "read_screen", "discover_controls", "accessibility_settings"
                 ) && (target.isNotBlank() || value.isNotBlank())
+                ) return null
+
+                if (action == "answer" &&
+                    (target.isNotBlank() || value.isBlank() ||
+                        value.length > AnswerPolicy.MAX_ANSWER_CHARS ||
+                        array.length() != 1 || keys.contains("condition"))
                 ) return null
 
                 if (SafetyGate.isNeverAllowedAction(action)) return null

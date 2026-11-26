@@ -543,7 +543,7 @@ class MainActivity : Activity() {
                                     status.text = if (result.offline) {
                                         "Offline कमांड मिली: ${plan.steps.size} काम"
                                     } else {
-                                        "कमांड मिली: ${plan.steps.size} काम"
+                                        AnswerPolicy.displayText(plan) ?: "कमांड मिली: ${plan.steps.size} काम"
                                     }
                                     tts.speak("जी, समझ गया।")
                                     try {

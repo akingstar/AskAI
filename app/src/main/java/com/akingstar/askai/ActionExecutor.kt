@@ -376,6 +376,15 @@ class ActionExecutor(
                     target = step.target
                 )
 
+            "answer" -> {
+                // Spoken text only: an answer never performs any phone action.
+                val text = step.value.trim().take(AnswerPolicy.MAX_ANSWER_CHARS)
+                if (text.isBlank()) false else {
+                    speak(text)
+                    true
+                }
+            }
+
             "scroll_up" -> accessibilityAction("scroll_up")
             "scroll_down" -> accessibilityAction("scroll_down")
             "home" -> accessibilityAction("home")
