@@ -14,3 +14,12 @@ Deploy with `wrangler deploy`.
 Copy the Worker URL into Ask AI's AI Worker URL field.
 
 The Worker rate limits by IP and minute using KV. Free plan limits and provider quotas apply; free AI is not guaranteed to be unlimited.
+
+
+## Worker tests
+
+Run the Worker unit tests locally from the repository root:
+
+`node --test worker/worker.test.js`
+
+GitHub Actions runs these tests before the Android unit tests and debug APK build.

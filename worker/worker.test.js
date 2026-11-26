@@ -224,3 +224,46 @@ test("passes validated conversation context to Gemini", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("accepts standalone answer within Android limits", () => {
+  assert.equal(validatePlan(plan([step({
+    action: "answer", target: "", value: "Namaste"
+  })])), true);
+  assert.equal(validatePlan(plan([step({
+    action: "answer", target: "", value: "x".repeat(400)
+  })])), true);
+});
+
+test("rejects invalid standalone answer values and targets", () => {
+  for (const value of ["", "   ", "x".repeat(401), "line1\nline2"]) {
+    assert.equal(validatePlan(plan([step({
+      action: "answer", target: "", value
+    })])), false);
+  }
+  assert.equal(validatePlan(plan([step({
+    action: "answer", target: "phone", value: "Hello"
+  })])), false);
+});
+
+test("rejects answer mixed with phone actions in either order", () => {
+  const answer = step({ action: "answer", target: "", value: "Hello" });
+  assert.equal(validatePlan(plan([answer, step()])), false);
+  assert.equal(validatePlan(plan([step(), answer])), false);
+});
+
+test("rejects conditions on answer steps", () => {
+  assert.equal(validatePlan(plan([step({
+    action: "answer", target: "", value: "Hello", condition: battery
+  })])), false);
+});
+
+test("serializes a valid standalone answer", () => {
+  const answerPlan = plan([step({
+    action: "answer", target: "", value: "Namaste"
+  })]);
+  assert.equal(
+    serializeValidPlan(JSON.stringify(answerPlan)),
+    JSON.stringify(answerPlan)
+  );
+});
