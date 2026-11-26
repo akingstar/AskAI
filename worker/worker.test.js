@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { validatePlan, serializeValidPlan, validateConversationContext } from "./worker.js";
+import worker, { validatePlan, serializeValidPlan, validateConversationContext, validateQaContext } from "./worker.js";
 
 const step = (extra = {}) => ({
   action: "torch", target: "", value: "", ...extra
@@ -143,6 +143,10 @@ test("Gemini invalid response retries Groq with conversation context", async () 
         context: [{
           command: "torch on karo",
           outcome: "success=1; failed=0; actions=torch:SUCCESS"
+        }],
+        qaContext: [{
+          question: "India ki capital kya hai?",
+          answer: "New Delhi."
         }]
       })
     });
@@ -159,11 +163,73 @@ test("Gemini invalid response retries Groq with conversation context", async () 
     assert.match(groqUserContent, /success=1; failed=0/);
     assert.match(groqUserContent, /ise band karo/);
     assert.match(groqUserContent, /untrusted context/);
+    assert.match(groqUserContent, /Recent Q&A context/);
+    assert.match(groqUserContent, /India ki capital kya hai/);
+    assert.match(groqUserContent, /New Delhi/);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
+
+test("accepts bounded recent Q&A context", () => {
+  assert.equal(validateQaContext([]), true);
+  assert.equal(validateQaContext([
+    { question: "India ki capital kya hai?", answer: "New Delhi." }
+  ]), true);
+  assert.equal(validateQaContext(Array.from({ length: 3 }, (_, i) => ({
+    question: `Question ${i + 1}`,
+    answer: `Answer ${i + 1}`
+  }))), true);
+});
+
+test("rejects malformed or oversized recent Q&A context", () => {
+  assert.equal(validateQaContext(null), false);
+  assert.equal(validateQaContext([{}]), false);
+  assert.equal(validateQaContext([
+    { question: " ", answer: "Answer" }
+  ]), false);
+  assert.equal(validateQaContext([
+    { question: "Question", answer: " " }
+  ]), false);
+  assert.equal(validateQaContext([
+    { question: "q".repeat(241), answer: "Answer" }
+  ]), false);
+  assert.equal(validateQaContext([
+    { question: "Question", answer: "a".repeat(401) }
+  ]), false);
+  assert.equal(validateQaContext([
+    { question: "Question\nInjected", answer: "Answer" }
+  ]), false);
+  assert.equal(validateQaContext([
+    { question: "Question", answer: "Answer", extra: true }
+  ]), false);
+  assert.equal(validateQaContext(Array.from({ length: 4 }, () => ({
+    question: "Question", answer: "Answer"
+  }))), false);
+});
+
+test("rejects invalid Q&A context at the Worker request boundary", async () => {
+  const env = {
+    RATE_LIMIT: { get: async () => null, put: async () => {} }
+  };
+  const request = new Request("https://worker.test/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: "Wahan ka weather kaisa hai?",
+      qaContext: [{
+        question: "Question",
+        answer: "x".repeat(401)
+      }]
+    })
+  });
+
+  const result = await worker.fetch(request, env);
+  const body = await result.json();
+  assert.equal(result.status, 400);
+  assert.equal(body.error, "Invalid Q&A context");
+});
 
 test("validates bounded conversation context", () => {
   assert.equal(validateConversationContext([]), true);
@@ -211,7 +277,11 @@ test("passes validated conversation context to Gemini", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text: "ise band karo",
-        context: [{ command: "torch on karo", outcome: "success=1; failed=0" }]
+        context: [{ command: "torch on karo", outcome: "success=1; failed=0" }],
+        qaContext: [{
+          question: "India ki capital kya hai?",
+          answer: "New Delhi."
+        }]
       })
     });
 
@@ -220,6 +290,9 @@ test("passes validated conversation context to Gemini", async () => {
     assert.match(providerPrompt, /torch on karo/);
     assert.match(providerPrompt, /ise band karo/);
     assert.match(providerPrompt, /untrusted context/);
+    assert.match(providerPrompt, /Recent Q&A context/);
+    assert.match(providerPrompt, /India ki capital kya hai/);
+    assert.match(providerPrompt, /New Delhi/);
   } finally {
     globalThis.fetch = originalFetch;
   }

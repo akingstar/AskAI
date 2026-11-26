@@ -33,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var micButton: Button
     private val commandExecutionGate = CommandExecutionGate()
     private val conversationMemory = ConversationMemory()
+    private val recentQaMemory = RecentQaMemory()
     private val whatsAppDraftFlow = WhatsAppDraftFlow()
     private val whatsAppVoiceSessionGuard = WhatsAppVoiceSessionGuard()
     private var pendingWhatsAppNumber: String? = null
@@ -528,7 +529,12 @@ class MainActivity : Activity() {
                     val callbackHandled = AtomicBoolean(false)
                     var executionStarted = false
                     try {
-                        AIClient.request(this@MainActivity, heard, conversationMemory.snapshot()) { result ->
+                        AIClient.request(
+                            this@MainActivity,
+                            heard,
+                            conversationMemory.snapshot(),
+                            recentQaMemory.snapshot()
+                        ) { result ->
                             if (!callbackHandled.compareAndSet(false, true)) return@request
                             if (isFinishing || isDestroyed) {
                                 releaseCommandExecution(executionToken)
@@ -551,7 +557,24 @@ class MainActivity : Activity() {
                         executor.execute(plan) { summary ->
                                             try {
                                             if (!result.offline && !isFinishing && !isDestroyed) {
-                                                conversationMemory.record(heard, summary)
+                                                if (AnswerPolicy.isAnswerPlan(plan)) {
+                                                    val answer = AnswerPolicy.displayText(plan).orEmpty()
+                                                    val answerStep = summary.stepResults.singleOrNull()
+                                                    val completedAnswer =
+                                                        summary.totalSteps == 1 &&
+                                                        summary.succeededSteps == 1 &&
+                                                        summary.failedSteps == 0 &&
+                                                        summary.cancelledSteps == 0 &&
+                                                        summary.skippedSteps == 0 &&
+                                                        answerStep?.action == "answer" &&
+                                                        answerStep.status == "SUCCESS"
+
+                                                    if (completedAnswer) {
+                                                        recentQaMemory.record(heard, answer)
+                                                    }
+                                                } else {
+                                                    conversationMemory.record(heard, summary)
+                                                }
                                             }
                                             } finally {
                                                 releaseCommandExecution(executionToken)
@@ -1238,6 +1261,8 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         invalidateWhatsAppVoiceSession()
+        conversationMemory.clear()
+        recentQaMemory.clear()
         tts.close()
         super.onDestroy()
     }
