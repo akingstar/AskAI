@@ -123,7 +123,7 @@ object AIClient {
             // Priority 1: Gemini
             if (result == null && !usageLimitReached && geminiKey.isNotBlank()) {
                 if (AIUsageGuard.reserveOnlineAttempt(appContext)) {
-                    val attempt = withRetry(appContext) { ProviderHttpClient.gemini(geminiKey, prompt) }
+                    val attempt = withRetry(appContext) { ProviderHttpClient.gemini(geminiKey, prompt).withProvider("Gemini") }
                     if (attempt is AIRequestResult.Success) result = attempt
                     else lastFailure = attempt
                 } else {
@@ -135,7 +135,7 @@ object AIClient {
             // Priority 2: Groq
             if (result == null && !usageLimitReached && groqKey.isNotBlank()) {
                 if (AIUsageGuard.reserveOnlineAttempt(appContext)) {
-                    val attempt = withRetry(appContext) { ProviderHttpClient.groq(groqKey, prompt) }
+                    val attempt = withRetry(appContext) { ProviderHttpClient.groq(groqKey, prompt).withProvider("Groq") }
                     if (attempt is AIRequestResult.Success) result = attempt
                     else lastFailure = attempt
                 } else {

@@ -41,6 +41,6 @@ internal sealed class AIRequestResult {
     object DuplicateRequest : AIRequestResult()
     object InvalidEndpoint : AIRequestResult()
     object NetworkError : AIRequestResult()
-    data class ServerError(val statusCode: Int) : AIRequestResult()
+    data class ServerError(val statusCode: Int, val provider: String = "") : AIRequestResult()
     object InvalidResponse : AIRequestResult()
 }

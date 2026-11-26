@@ -2,7 +2,12 @@ package com.akingstar.askai
 
 /** Hindi status text and spoken text for HTTP failures from online AI providers. */
 internal object AIErrorMessages {
-    fun forServerError(code: Int): Pair<String, String> = when {
+    fun forServerError(code: Int, provider: String = ""): Pair<String, String> {
+        val base = baseMessages(code)
+        return if (provider.isBlank()) base else Pair("$provider: ${base.first}", base.second)
+    }
+
+    private fun baseMessages(code: Int): Pair<String, String> = when {
         code == 401 || code == 403 -> Pair(
             "AI key गलत या बंद है। Settings में key जाँचें।",
             "AI की key सही नहीं है। कृपया सेटिंग्स में जाँचें।"
@@ -25,3 +30,7 @@ internal object AIErrorMessages {
         )
     }
 }
+
+/** Tags HTTP failures with the provider that produced them; other results are unchanged. */
+internal fun AIRequestResult.withProvider(name: String): AIRequestResult =
+    if (this is AIRequestResult.ServerError) this.copy(provider = name) else this

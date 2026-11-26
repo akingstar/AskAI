@@ -595,7 +595,7 @@ class MainActivity : Activity() {
                                 }
 
                                 is AIRequestResult.ServerError -> {
-                                    status.text = AIErrorMessages.forServerError(result.statusCode).first
+                                    status.text = AIErrorMessages.forServerError(result.statusCode, result.provider).first
                                     tts.speak(AIErrorMessages.forServerError(result.statusCode).second)
                                     releaseCommandExecution(executionToken)
                                 }
