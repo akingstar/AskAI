@@ -595,8 +595,8 @@ class MainActivity : Activity() {
                                 }
 
                                 is AIRequestResult.ServerError -> {
-                                    status.text = "AI सेवा में समस्या है। HTTP ${result.statusCode}"
-                                    tts.speak("AI सेवा अभी उपलब्ध नहीं है।")
+                                    status.text = AIErrorMessages.forServerError(result.statusCode).first
+                                    tts.speak(AIErrorMessages.forServerError(result.statusCode).second)
                                     releaseCommandExecution(executionToken)
                                 }
 

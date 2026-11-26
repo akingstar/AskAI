@@ -160,7 +160,8 @@ object AIClient {
                     AIRequestResult.InvalidResponse,
                     AIRequestResult.UsageLimitReached -> true
                     is AIRequestResult.ServerError ->
-                        failure.statusCode == 429 ||
+                        failure.statusCode == 401 || failure.statusCode == 403 ||
+                            failure.statusCode == 404 || failure.statusCode == 429 ||
                             failure.statusCode >= 500
                     else -> false
                 }
