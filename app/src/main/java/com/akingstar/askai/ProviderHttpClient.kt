@@ -39,7 +39,8 @@ internal object ProviderHttpClient {
                 JSONObject()
                     .put("responseMimeType", "application/json")
                     .put("temperature", 0)
-                    .put("maxOutputTokens", 1200)
+                    .put("maxOutputTokens", 2048)
+                    .put("thinkingConfig", JSONObject().put("thinkingLevel", "low"))
             )
 
         return post(
@@ -63,7 +64,8 @@ internal object ProviderHttpClient {
                     .put("role", "user")
                     .put("content", prompt)))
             .put("response_format", JSONObject().put("type", "json_object"))
-            .put("max_completion_tokens", 1200)
+            .put("max_completion_tokens", 2048)
+            .put("reasoning_effort", "low")
 
         return post(
             "https://api.groq.com/openai/v1/chat/completions",

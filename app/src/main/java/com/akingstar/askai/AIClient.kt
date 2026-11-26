@@ -53,6 +53,19 @@ object AIClient {
         }
     }
 
+    private fun withRetry(context: Context, call: () -> AIRequestResult): AIRequestResult {
+        var attempt = call()
+        var retries = 0
+        while (ProviderRetryPolicy.shouldRetry(attempt, retries)) {
+            // Every outbound call, including a retry, must reserve quota first.
+            if (!AIUsageGuard.reserveOnlineAttempt(context)) return attempt
+            Thread.sleep(ProviderRetryPolicy.RETRY_DELAY_MS)
+            retries++
+            attempt = call()
+        }
+        return attempt
+    }
+
     internal fun request(
         context: Context,
         text: String,
@@ -110,7 +123,7 @@ object AIClient {
             // Priority 1: Gemini
             if (result == null && !usageLimitReached && geminiKey.isNotBlank()) {
                 if (AIUsageGuard.reserveOnlineAttempt(appContext)) {
-                    val attempt = ProviderHttpClient.gemini(geminiKey, prompt)
+                    val attempt = withRetry(appContext) { ProviderHttpClient.gemini(geminiKey, prompt) }
                     if (attempt is AIRequestResult.Success) result = attempt
                     else lastFailure = attempt
                 } else {
@@ -122,7 +135,7 @@ object AIClient {
             // Priority 2: Groq
             if (result == null && !usageLimitReached && groqKey.isNotBlank()) {
                 if (AIUsageGuard.reserveOnlineAttempt(appContext)) {
-                    val attempt = ProviderHttpClient.groq(groqKey, prompt)
+                    val attempt = withRetry(appContext) { ProviderHttpClient.groq(groqKey, prompt) }
                     if (attempt is AIRequestResult.Success) result = attempt
                     else lastFailure = attempt
                 } else {
