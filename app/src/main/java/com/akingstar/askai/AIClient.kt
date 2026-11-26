@@ -97,6 +97,16 @@ object AIClient {
             }
 
 
+            // Fast path: simple fixed commands run offline first. This saves latency and
+            // online quota. Duplicate protection above has already run, and the plan
+            // still passes PlanValidator inside validatedOfflinePlan.
+            if (result == null) {
+                val fastPlan = validatedOfflinePlan(text)
+                if (fastPlan != null && OfflineFirstPolicy.isFastPathSafe(fastPlan)) {
+                    result = AIRequestResult.Success(fastPlan, offline = true)
+                }
+            }
+
             // Priority 1: Gemini
             if (result == null && !usageLimitReached && geminiKey.isNotBlank()) {
                 if (AIUsageGuard.reserveOnlineAttempt(appContext)) {
