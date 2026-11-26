@@ -155,6 +155,14 @@ class SpeechController(
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    SpeechSilencePolicy.COMPLETE_SILENCE_MS
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    SpeechSilencePolicy.POSSIBLY_COMPLETE_SILENCE_MS
+                )
             }
 
             val startedAt = SystemClock.elapsedRealtime()
