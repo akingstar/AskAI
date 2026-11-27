@@ -143,15 +143,7 @@ object AIClient {
 
                 if (result == null) {
                     val noProviders = geminiKey.isBlank() && groqKey.isBlank() && endpoint.isBlank()
-                    val eligible = when (lastFailure) {
-                        AIRequestResult.NetworkError, AIRequestResult.InvalidResponse,
-                        AIRequestResult.UsageLimitReached -> true
-                        is AIRequestResult.ServerError -> lastFailure.statusCode == 401 ||
-                            lastFailure.statusCode == 403 || lastFailure.statusCode == 404 ||
-                            lastFailure.statusCode == 429 || lastFailure.statusCode >= 500
-                        else -> false
-                    }
-                    if (noProviders || eligible) {
+                    if (AIClientFallbackPolicy.shouldUseOfflineParser(noProviders, lastFailure)) {
                         result = validatedOfflinePlan(text)?.let { AIRequestResult.Success(it, offline = true) }
                     }
                 }

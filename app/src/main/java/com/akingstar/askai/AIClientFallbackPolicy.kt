@@ -1,14 +1,31 @@
 package com.akingstar.askai
 
 internal object AIClientFallbackPolicy {
+    // Intentional offline mode is available only when no online provider is configured.
     fun shouldUseOfflineParser(endpoint: String): Boolean = endpoint.isBlank()
 
+    // Central decision used after all configured providers have been attempted.
+    fun shouldUseOfflineParser(
+        noProviders: Boolean,
+        failure: AIRequestResult
+    ): Boolean = noProviders || shouldAttemptFallback(failure)
+
+    // Provider-independent transient failure policy for Gemini, Groq and Worker.
+    fun shouldAttemptFallback(failure: AIRequestResult): Boolean = when (failure) {
+        AIRequestResult.NetworkError,
+        AIRequestResult.InvalidResponse -> true
+
+        is AIRequestResult.ServerError ->
+            failure.statusCode == 429 || failure.statusCode in 500..599
+
+        else -> false
+    }
+
+    // Retained for endpoint-specific callers/tests; an insecure endpoint never qualifies.
     fun shouldAttemptFallback(
         endpoint: String,
         failure: AIRequestResult
     ): Boolean {
-        if (endpoint.isBlank()) return false
-
         val secureEndpoint = runCatching {
             val url = java.net.URL(endpoint)
             url.protocol.equals("https", ignoreCase = true) &&
@@ -16,17 +33,7 @@ internal object AIClientFallbackPolicy {
                 url.userInfo == null
         }.getOrDefault(false)
 
-        if (!secureEndpoint) return false
-
-        return when (failure) {
-            AIRequestResult.NetworkError,
-            AIRequestResult.InvalidResponse -> true
-
-            is AIRequestResult.ServerError ->
-                failure.statusCode == 429 || failure.statusCode >= 500
-
-            else -> false
-        }
+        return secureEndpoint && shouldAttemptFallback(failure)
     }
 }
 
