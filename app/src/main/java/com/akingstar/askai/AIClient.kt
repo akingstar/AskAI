@@ -154,7 +154,7 @@ object AIClient {
         }.start()
     }
 
-    private fun requestWorker(
+    internal fun requestWorker(
         endpoint: String,
         text: String,
         conversation: List<ConversationTurn>,
@@ -167,44 +167,98 @@ object AIClient {
         ) return AIRequestResult.UnrecognizedCommand
 
         var lastFailure: AIRequestResult = AIRequestResult.NetworkError
-        repeat(2) {
+        var retriesDone = 0
+
+        while (true) {
             if (!reserveAttempt()) return AIRequestResult.UsageLimitReached
+
             var connection: HttpURLConnection? = null
+            var retry = false
+
             try {
                 val contextArray = JSONArray()
                 conversation.takeLast(3).forEach { turn ->
-                    contextArray.put(JSONObject().put("command", turn.command.take(240)).put("outcome", turn.outcome.take(180)))
+                    contextArray.put(
+                        JSONObject()
+                            .put("command", turn.command.take(240))
+                            .put("outcome", turn.outcome.take(180))
+                    )
                 }
+
                 val qaArray = JSONArray()
                 qaContext.takeLast(3).forEach { turn ->
-                    qaArray.put(JSONObject().put("question", turn.question.take(240)).put("answer", turn.answer.take(400)))
+                    qaArray.put(
+                        JSONObject()
+                            .put("question", turn.question.take(240))
+                            .put("answer", turn.answer.take(400))
+                    )
                 }
-                val body = JSONObject().put("text", text).put("system", SYSTEM_PROMPT)
-                    .put("context", contextArray).put("qaContext", qaArray)
+
+                val body = JSONObject()
+                    .put("text", text)
+                    .put("system", SYSTEM_PROMPT)
+                    .put("context", contextArray)
+                    .put("qaContext", qaArray)
+
                 val encoded = body.toString()
-                if (!OutboundPrivacyGuard.isPayloadWithinLimit(encoded)) return AIRequestResult.UnrecognizedCommand
+                if (!OutboundPrivacyGuard.isPayloadWithinLimit(encoded)) {
+                    return AIRequestResult.UnrecognizedCommand
+                }
+
                 connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; connectTimeout = 9000; readTimeout = 12000
-                    doOutput = true; doInput = true; useCaches = false; instanceFollowRedirects = false
+                    requestMethod = "POST"
+                    connectTimeout = 9000
+                    readTimeout = 12000
+                    doOutput = true
+                    doInput = true
+                    useCaches = false
+                    instanceFollowRedirects = false
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Accept", "application/json")
                 }
-                connection.outputStream.use { it.write(encoded.toByteArray(Charsets.UTF_8)) }
+
+                connection.outputStream.use {
+                    it.write(encoded.toByteArray(Charsets.UTF_8))
+                }
+
                 val code = connection.responseCode
                 if (code in 200..299) {
-                    val raw = connection.inputStream.use { readBounded(it, 64 * 1024) }
+                    val raw = connection.inputStream.use {
+                        readBounded(it, 64 * 1024)
+                    }
                     val plan = runCatching {
                         val planJson = JSONObject(raw).opt("result") as? String
-                        if (planJson.isNullOrBlank()) null else PlanValidator.parse(planJson)
+                        if (planJson.isNullOrBlank()) null
+                        else PlanValidator.parse(planJson)
                     }.getOrNull()
-                    return if (plan != null) AIRequestResult.Success(plan) else AIRequestResult.InvalidResponse
+
+                    return if (plan != null) {
+                        AIRequestResult.Success(plan)
+                    } else {
+                        AIRequestResult.InvalidResponse
+                    }
                 }
+
                 lastFailure = AIRequestResult.ServerError(code)
-                if (code in 400..499 && code != 429) return lastFailure
-            } catch (_: Exception) { lastFailure = AIRequestResult.NetworkError }
-            finally { connection?.disconnect() }
+                retry = ProviderRetryPolicy.shouldRetry(lastFailure, retriesDone)
+            } catch (_: Exception) {
+                lastFailure = AIRequestResult.NetworkError
+                retry = ProviderRetryPolicy.shouldRetry(lastFailure, retriesDone)
+            } finally {
+                connection?.disconnect()
+            }
+
+            if (!retry) return lastFailure
+
+            try {
+                Thread.sleep(ProviderRetryPolicy.RETRY_DELAY_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return lastFailure
+            }
+
+            retriesDone++
         }
-        return lastFailure
     }
 
     private fun readBounded(input: java.io.InputStream, maxBytes: Int): String {
