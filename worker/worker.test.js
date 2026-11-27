@@ -61,3 +61,66 @@ test("Worker still routes safe question to configured provider", async () => {
     assert.equal(result.status, 200); assert.equal(providerCalls, 1);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("Worker provider fallback uses current models", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    if (String(url).includes("generativelanguage.googleapis.com")) {
+      return new Response("unavailable", { status: 503 });
+    }
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(plan()) } }]
+    }), { status: 200 });
+  };
+  try {
+    const request = new Request("https://worker.test/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "भारत की राजधानी क्या है?" })
+    });
+    const result = await worker.fetch(request, {
+      GEMINI_API_KEY: "test",
+      GROQ_API_KEY: "test",
+      RATE_LIMIT: { get: async () => null, put: async () => {} }
+    });
+    assert.equal(result.status, 200);
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].url, /gemini-3\.8-flash/);
+    assert.equal(calls[1].body.model, "openai/gpt-oss-20b");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Worker returns 503 when both providers are unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response("unavailable", { status: 503 });
+  };
+  try {
+    const request = new Request("https://worker.test/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "भारत की राजधानी क्या है?" })
+    });
+    const result = await worker.fetch(request, {
+      GEMINI_API_KEY: "test",
+      GROQ_API_KEY: "test",
+      RATE_LIMIT: { get: async () => null, put: async () => {} }
+    });
+    assert.equal(result.status, 503);
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Worker accepts 4000 characters and rejects 4001", () => {
+  assert.equal(validateOutboundPayload("a".repeat(4000), [], []), true);
+  assert.equal(validateOutboundPayload("a".repeat(4001), [], []), false);
+});

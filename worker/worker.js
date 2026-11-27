@@ -63,7 +63,7 @@ export function validateQaContext(context) {
 }
 
 export function validateOutboundPayload(text, context = [], qaContext = []) {
-  if (!safeString(text, 3000) || text.trim().length === 0 || containsPrivateData(text)) return false;
+  if (!safeString(text, 4000) || text.trim().length === 0 || containsPrivateData(text)) return false;
   if (!validateConversationContext(context) || !validateQaContext(qaContext)) return false;
   return context.every((turn) => !containsPrivateData(turn.command) && !containsPrivateData(turn.outcome)) &&
     qaContext.every((turn) => !containsPrivateData(turn.question) && !containsPrivateData(turn.answer));
@@ -136,7 +136,7 @@ export default {
 
     let rawBody;
     try { rawBody = await request.text(); } catch { return response({ error: "Invalid request" }, 400); }
-    if (rawBody.length > 12000) return response({ error: "Request too large" }, 413);
+    if (rawBody.length > 16000) return response({ error: "Request too large" }, 413);
     let body;
     try { body = JSON.parse(rawBody); } catch { return response({ error: "Invalid JSON" }, 400); }
     if (!body || typeof body !== "object" || Array.isArray(body) ||
@@ -191,7 +191,7 @@ export default {
 async function gemini(env, prompt) {
   if (!env.GEMINI_API_KEY) return null;
   try {
-    const result = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
+    const result = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json" } })
@@ -208,7 +208,7 @@ async function groq(env, system, userContent) {
     const result = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Authorization": `Bearer ${env.GROQ_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "llama-3.1-8b-instant", temperature: 0.1, messages: [
+      body: JSON.stringify({ model: "openai/gpt-oss-20b", temperature: 0.1, messages: [
         { role: "system", content: "Return only JSON. " + system },
         { role: "user", content: userContent }
       ] })
