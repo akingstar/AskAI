@@ -20,7 +20,7 @@ internal object ProviderHttpClient {
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
             .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0)
                 .put("maxOutputTokens", 2048).put("thinkingConfig", JSONObject().put("thinkingLevel", "low")))
-        if (!OutboundPrivacyGuard.canTransmit(body.toString())) return AIRequestResult.UnrecognizedCommand
+        if (!OutboundPrivacyGuard.isPayloadWithinLimit(body.toString())) return AIRequestResult.UnrecognizedCommand
         return post("https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent", body,
             mapOf("x-goog-api-key" to apiKey), ProviderResponseParser::geminiText)
     }
@@ -34,14 +34,14 @@ internal object ProviderHttpClient {
                 .put(JSONObject().put("role", "user").put("content", prompt)))
             .put("response_format", JSONObject().put("type", "json_object"))
             .put("max_completion_tokens", 2048).put("reasoning_effort", "low")
-        if (!OutboundPrivacyGuard.canTransmit(body.toString())) return AIRequestResult.UnrecognizedCommand
+        if (!OutboundPrivacyGuard.isPayloadWithinLimit(body.toString())) return AIRequestResult.UnrecognizedCommand
         return post("https://api.groq.com/openai/v1/chat/completions", body,
             mapOf("Authorization" to "Bearer $apiKey"), ProviderResponseParser::groqText)
     }
 
     private fun post(endpoint: String, body: JSONObject, headers: Map<String, String>, extractText: (String) -> String?): AIRequestResult {
         val serialized = body.toString()
-        if (!OutboundPrivacyGuard.canTransmit(serialized)) return AIRequestResult.UnrecognizedCommand
+        if (!OutboundPrivacyGuard.isPayloadWithinLimit(serialized)) return AIRequestResult.UnrecognizedCommand
         var connection: HttpURLConnection? = null
         return try {
             connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {

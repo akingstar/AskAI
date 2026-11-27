@@ -166,7 +166,6 @@ export default {
       : "No recent Q&A context.";
     const userContent = `${contextText}\n${qaText}\nCurrent user command: ${body.text}`;
     const prompt = `${SYSTEM_PROMPT}\n${userContent}`;
-    if (containsPrivateData(prompt)) return response({ error: "Request rejected by privacy policy" }, 400);
 
     let serialized = null;
     let providerResponded = false;

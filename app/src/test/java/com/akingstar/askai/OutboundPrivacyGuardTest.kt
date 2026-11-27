@@ -43,4 +43,12 @@ class OutboundPrivacyGuardTest {
         assertFalse(OutboundPrivacyGuard.canTransmit("Current user request: OTP 123456"))
         assertTrue(OutboundPrivacyGuard.canTransmit("Current user request: भारत की राजधानी क्या है?"))
     }
+
+    @Test
+    fun trustedSystemPromptIsSubjectToPayloadSizeLimitOnly() {
+        val payload = AIClient.SYSTEM_PROMPT + "\nCurrent user request: भारत की राजधानी क्या है?"
+        assertTrue(OutboundPrivacyGuard.isPayloadWithinLimit(payload))
+        assertFalse(OutboundPrivacyGuard.isPayloadWithinLimit("x".repeat(16_001)))
+    }
+
 }

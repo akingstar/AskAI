@@ -35,8 +35,10 @@ internal object OutboundPrivacyGuard {
     }
 
     /** Also used at the final HTTP serialization boundary as a defense-in-depth check. */
+    fun isPayloadWithinLimit(value: String): Boolean = value.length <= 16_000
+
     fun canTransmit(value: String): Boolean =
-        value.length <= 16_000 && !containsPrivateData(value)
+        isPayloadWithinLimit(value) && !containsPrivateData(value)
 
     private fun containsPrivateData(value: String): Boolean {
         if (SensitiveDataFilter.containsSensitive(value)) return true
