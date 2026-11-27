@@ -82,8 +82,8 @@ class ScreenTextCollectorTest {
     @Test
     fun ignoresInvisibleNodes() {
         val root = FakeNode(
-            text = "Visible",
             children = listOf(
+                FakeNode(text = "Visible"),
                 FakeNode(text = "Hidden", isVisibleToUser = false)
             )
         )
