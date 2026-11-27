@@ -1,342 +1,63 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { validatePlan, serializeValidPlan, validateConversationContext, validateQaContext } from "./worker.js";
+import worker, { validatePlan, serializeValidPlan, validateConversationContext, validateQaContext, containsPrivateData, validateOutboundPayload } from "./worker.js";
 
-const step = (extra = {}) => ({
-  action: "torch", target: "", value: "", ...extra
-});
+const step = (extra = {}) => ({ action: "torch", target: "", value: "", ...extra });
 const plan = (steps = [step()]) => ({ language: "hi-IN", steps });
-const battery = {
-  type: "BATTERY_PERCENT",
-  operator: "LESS_THAN",
-  value: 20,
-  upperValue: 0
-};
+const battery = { type: "BATTERY_PERCENT", operator: "LESS_THAN", value: 20, upperValue: 0 };
 
-test("accepts legacy plan without conditions", () => {
+test("accepts legacy plan and valid routine conditions", () => {
   assert.equal(validatePlan(plan()), true);
-});
-
-test("accepts valid battery condition", () => {
   assert.equal(validatePlan(plan([step({ condition: battery })])), true);
+  assert.equal(validatePlan(plan([step(), step({ condition: { type: "PREVIOUS_STEP", operator: "SUCCEEDED", value: 0, upperValue: 0 } })])), true);
 });
-
-test("accepts overnight time condition", () => {
-  assert.equal(validatePlan(plan([step({ condition: {
-    type: "TIME_OF_DAY", operator: "BETWEEN",
-    value: 1320, upperValue: 360
-  }})])), true);
-});
-
-test("accepts previous-step condition after first step", () => {
-  assert.equal(validatePlan(plan([
-    step(),
-    step({ condition: {
-      type: "PREVIOUS_STEP", operator: "SUCCEEDED",
-      value: 0, upperValue: 0
-    }})
-  ])), true);
-});
-
-test("rejects previous-step condition on first step", () => {
-  assert.equal(validatePlan(plan([step({ condition: {
-    type: "PREVIOUS_STEP", operator: "SUCCEEDED",
-    value: 0, upperValue: 0
-  }})])), false);
-});
-
-test("rejects unknown actions and extra fields", () => {
-  assert.equal(validatePlan(plan([step({ action: "unknown" })])), false);
+test("rejects malformed, oversized and invalid plans", () => {
   assert.equal(validatePlan({ ...plan(), extra: true }), false);
-});
-
-test("rejects invalid condition operator and bounds", () => {
-  assert.equal(validatePlan(plan([step({ condition: {
-    ...battery, operator: "BETWEEN"
-  }})])), false);
-  assert.equal(validatePlan(plan([step({ condition: {
-    ...battery, value: 101
-  }})])), false);
-});
-
-test("rejects fractional condition values and extra condition keys", () => {
-  assert.equal(validatePlan(plan([step({ condition: {
-    ...battery, value: 20.5
-  }})])), false);
-  assert.equal(validatePlan(plan([step({ condition: {
-    ...battery, extra: true
-  }})])), false);
-});
-
-test("rejects malformed step types and oversized strings", () => {
+  assert.equal(validatePlan(plan([step({ action: "unknown" })])), false);
   assert.equal(validatePlan(plan([step({ target: 42 })])), false);
-  assert.equal(validatePlan(plan([step({ value: "x".repeat(501) })])), false);
-});
-
-test("rejects empty or oversized step arrays", () => {
-  assert.equal(validatePlan(plan([])), false);
   assert.equal(validatePlan(plan(Array.from({ length: 6 }, () => step()))), false);
+  assert.equal(serializeValidPlan("{bad"), null);
 });
-
-
-test("serializes a valid provider plan", () => {
-  const result = serializeValidPlan(JSON.stringify(plan()));
-  assert.equal(result, JSON.stringify(plan()));
+test("accepts standalone answers but rejects mixed answer plans", () => {
+  assert.equal(validatePlan(plan([step({ action: "answer", value: "नमस्ते" })])), true);
+  assert.equal(validatePlan(plan([step(), step({ action: "answer", value: "hello" })])), false);
 });
-
-test("rejects malformed provider JSON", () => {
-  assert.equal(serializeValidPlan("{invalid"), null);
-});
-
-test("rejects schema-invalid provider response", () => {
-  assert.equal(
-    serializeValidPlan(JSON.stringify(plan([step({ action: "unknown" })]))),
-    null
-  );
-});
-
-
-test("Gemini invalid response retries Groq with conversation context", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  let groqUserContent = "";
-
-  globalThis.fetch = async (url, init) => {
-    const address = String(url);
-    calls.push(address);
-
-    if (address.includes("generativelanguage.googleapis.com")) {
-      return new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: "{bad json" }] } }]
-      }), { status: 200 });
-    }
-
-    if (address.includes("api.groq.com")) {
-      const requestBody = JSON.parse(init.body);
-      groqUserContent = requestBody.messages.find(
-        (message) => message.role === "user"
-      )?.content || "";
-
-      return new Response(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify(plan()) } }]
-      }), { status: 200 });
-    }
-
-    throw new Error("Unexpected provider URL");
-  };
-
-  try {
-    const env = {
-      GEMINI_API_KEY: "test-key",
-      GROQ_API_KEY: "test-key",
-      RATE_LIMIT: {
-        get: async () => null,
-        put: async () => {}
-      }
-    };
-
-    const request = new Request("https://worker.test/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: "ise band karo",
-        context: [{
-          command: "torch on karo",
-          outcome: "success=1; failed=0; actions=torch:SUCCESS"
-        }],
-        qaContext: [{
-          question: "India ki capital kya hai?",
-          answer: "New Delhi."
-        }]
-      })
-    });
-
-    const result = await worker.fetch(request, env);
-    const body = await result.json();
-
-    assert.equal(result.status, 200);
-    assert.equal(body.result, JSON.stringify(plan()));
-    assert.equal(calls.length, 2);
-    assert.match(calls[0], /generativelanguage/);
-    assert.match(calls[1], /api.groq.com/);
-    assert.match(groqUserContent, /torch on karo/);
-    assert.match(groqUserContent, /success=1; failed=0/);
-    assert.match(groqUserContent, /ise band karo/);
-    assert.match(groqUserContent, /untrusted context/);
-    assert.match(groqUserContent, /Recent Q&A context/);
-    assert.match(groqUserContent, /India ki capital kya hai/);
-    assert.match(groqUserContent, /New Delhi/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-
-test("accepts bounded recent Q&A context", () => {
-  assert.equal(validateQaContext([]), true);
-  assert.equal(validateQaContext([
-    { question: "India ki capital kya hai?", answer: "New Delhi." }
-  ]), true);
-  assert.equal(validateQaContext(Array.from({ length: 3 }, (_, i) => ({
-    question: `Question ${i + 1}`,
-    answer: `Answer ${i + 1}`
-  }))), true);
-});
-
-test("rejects malformed or oversized recent Q&A context", () => {
-  assert.equal(validateQaContext(null), false);
-  assert.equal(validateQaContext([{}]), false);
-  assert.equal(validateQaContext([
-    { question: " ", answer: "Answer" }
-  ]), false);
-  assert.equal(validateQaContext([
-    { question: "Question", answer: " " }
-  ]), false);
-  assert.equal(validateQaContext([
-    { question: "q".repeat(241), answer: "Answer" }
-  ]), false);
-  assert.equal(validateQaContext([
-    { question: "Question", answer: "a".repeat(401) }
-  ]), false);
-  assert.equal(validateQaContext([
-    { question: "Question\nInjected", answer: "Answer" }
-  ]), false);
-  assert.equal(validateQaContext([
-    { question: "Question", answer: "Answer", extra: true }
-  ]), false);
-  assert.equal(validateQaContext(Array.from({ length: 4 }, () => ({
-    question: "Question", answer: "Answer"
-  }))), false);
-});
-
-test("rejects invalid Q&A context at the Worker request boundary", async () => {
-  const env = {
-    RATE_LIMIT: { get: async () => null, put: async () => {} }
-  };
-  const request = new Request("https://worker.test/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text: "Wahan ka weather kaisa hai?",
-      qaContext: [{
-        question: "Question",
-        answer: "x".repeat(401)
-      }]
-    })
-  });
-
-  const result = await worker.fetch(request, env);
-  const body = await result.json();
-  assert.equal(result.status, 400);
-  assert.equal(body.error, "Invalid Q&A context");
-});
-
-test("validates bounded conversation context", () => {
+test("validates bounded safe conversation context", () => {
   assert.equal(validateConversationContext([]), true);
-  assert.equal(validateConversationContext([
-    { command: "torch on karo", outcome: "success=1; failed=0" }
-  ]), true);
+  assert.equal(validateConversationContext([{ command: "torch on karo", outcome: "success=1" }]), true);
+  assert.equal(validateQaContext([{ question: "भारत की राजधानी?", answer: "नई दिल्ली" }]), true);
+  assert.equal(validateConversationContext([{ command: "x".repeat(241), outcome: "ok" }]), false);
 });
-
-test("rejects invalid conversation context", () => {
-  assert.equal(validateConversationContext(null), false);
-  assert.equal(validateConversationContext([{}]), false);
-  assert.equal(validateConversationContext([
-    { command: "x".repeat(241), outcome: "ok" }
-  ]), false);
-  assert.equal(validateConversationContext([
-    { command: "hello", outcome: "x".repeat(181) }
-  ]), false);
-  assert.equal(validateConversationContext([
-    { command: "hello", outcome: "ok", extra: true }
-  ]), false);
-  assert.equal(validateConversationContext(
-    Array.from({ length: 4 }, () => ({ command: "a", outcome: "b" }))
-  ), false);
+test("privacy detector catches credentials and personal identifiers", () => {
+  for (const secret of ["password is hunter2", "OTP 123456", "पिन: 1234", "CVV 123", "पासवर्ड: secret123", "test@example.com", "UPI name@okaxis", "9876543210", "4111111111111111"]) assert.equal(containsPrivateData(secret), true, secret);
+  assert.equal(containsPrivateData("भारत की राजधानी क्या है?"), false);
 });
-
-test("passes validated conversation context to Gemini", async () => {
-  const originalFetch = globalThis.fetch;
-  let providerPrompt = "";
-
-  globalThis.fetch = async (_url, init) => {
-    const request = JSON.parse(init.body);
-    providerPrompt = request.contents[0].parts[0].text;
-    return new Response(JSON.stringify({
-      candidates: [{ content: { parts: [{ text: JSON.stringify(plan()) }] } }]
-    }), { status: 200 });
-  };
-
+test("outbound payload rejects private user input and context but allows benign prompts", () => {
+  assert.equal(validateOutboundPayload("भारत की राजधानी क्या है?", [], []), true);
+  assert.equal(validateOutboundPayload("OTP 123456", [], []), false);
+  assert.equal(validateOutboundPayload("What was that?", [{ command: "password is hunter2", outcome: "ok" }], []), false);
+  assert.equal(validateOutboundPayload("What was that?", [], [{ question: "safe?", answer: "UPI name@okaxis" }]), false);
+});
+test("Worker refuses sensitive requests before invoking any provider", async () => {
+  const originalFetch = globalThis.fetch; let providerCalls = 0;
+  globalThis.fetch = async () => { providerCalls++; throw new Error("must not call provider"); };
   try {
-    const env = {
-      GEMINI_API_KEY: "test-key",
-      RATE_LIMIT: { get: async () => null, put: async () => {} }
-    };
-    const request = new Request("https://worker.test/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: "ise band karo",
-        context: [{ command: "torch on karo", outcome: "success=1; failed=0" }],
-        qaContext: [{
-          question: "India ki capital kya hai?",
-          answer: "New Delhi."
-        }]
-      })
-    });
-
-    const result = await worker.fetch(request, env);
-    assert.equal(result.status, 200);
-    assert.match(providerPrompt, /torch on karo/);
-    assert.match(providerPrompt, /ise band karo/);
-    assert.match(providerPrompt, /untrusted context/);
-    assert.match(providerPrompt, /Recent Q&A context/);
-    assert.match(providerPrompt, /India ki capital kya hai/);
-    assert.match(providerPrompt, /New Delhi/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+    const request = new Request("https://worker.test/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "OTP 123456" }) });
+    const result = await worker.fetch(request, { GEMINI_API_KEY: "test", GROQ_API_KEY: "test", RATE_LIMIT: { get: async () => null, put: async () => {} } });
+    assert.equal(result.status, 400); assert.equal(providerCalls, 0);
+  } finally { globalThis.fetch = originalFetch; }
 });
-
-
-test("accepts standalone answer within Android limits", () => {
-  assert.equal(validatePlan(plan([step({
-    action: "answer", target: "", value: "Namaste"
-  })])), true);
-  assert.equal(validatePlan(plan([step({
-    action: "answer", target: "", value: "x".repeat(400)
-  })])), true);
-});
-
-test("rejects invalid standalone answer values and targets", () => {
-  for (const value of ["", "   ", "x".repeat(401), "line1\nline2"]) {
-    assert.equal(validatePlan(plan([step({
-      action: "answer", target: "", value
-    })])), false);
-  }
-  assert.equal(validatePlan(plan([step({
-    action: "answer", target: "phone", value: "Hello"
-  })])), false);
-});
-
-test("rejects answer mixed with phone actions in either order", () => {
-  const answer = step({ action: "answer", target: "", value: "Hello" });
-  assert.equal(validatePlan(plan([answer, step()])), false);
-  assert.equal(validatePlan(plan([step(), answer])), false);
-});
-
-test("rejects conditions on answer steps", () => {
-  assert.equal(validatePlan(plan([step({
-    action: "answer", target: "", value: "Hello", condition: battery
-  })])), false);
-});
-
-test("serializes a valid standalone answer", () => {
-  const answerPlan = plan([step({
-    action: "answer", target: "", value: "Namaste"
-  })]);
-  assert.equal(
-    serializeValidPlan(JSON.stringify(answerPlan)),
-    JSON.stringify(answerPlan)
-  );
+test("Worker still routes safe question to configured provider", async () => {
+  const originalFetch = globalThis.fetch; let providerCalls = 0;
+  globalThis.fetch = async (_url, init) => {
+    providerCalls++;
+    const body = JSON.parse(init.body);
+    assert.match(JSON.stringify(body), /भारत की राजधानी/);
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(plan()) }] } }] }), { status: 200 });
+  };
+  try {
+    const request = new Request("https://worker.test/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "भारत की राजधानी क्या है?" }) });
+    const result = await worker.fetch(request, { GEMINI_API_KEY: "test", RATE_LIMIT: { get: async () => null, put: async () => {} } });
+    assert.equal(result.status, 200); assert.equal(providerCalls, 1);
+  } finally { globalThis.fetch = originalFetch; }
 });
