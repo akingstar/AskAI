@@ -22,8 +22,8 @@ class ScreenTextCollectorTest {
     @Test
     fun skipsPasswordAndEditableNodesAndTheirDescendants() {
         val root = FakeNode(
-            text = "Welcome",
             children = listOf(
+                FakeNode(text = "Welcome"),
                 FakeNode(
                     text = "secret-password",
                     isPassword = true,
@@ -43,6 +43,27 @@ class ScreenTextCollectorTest {
         assertTrue(result.contains("Continue"))
         assertFalse(result.contains("secret"))
         assertFalse(result.contains("typed-private"))
+    }
+
+    @Test
+    fun skipsParentTextThatMayAggregateEditableChildValues() {
+        val root = FakeNode(
+            text = "Account form typed-private-password",
+            contentDescription = "Form containing secret input",
+            children = listOf(
+                FakeNode(
+                    text = "typed-private-password",
+                    isEditable = true
+                ),
+                FakeNode(text = "Continue")
+            )
+        )
+
+        val result = ScreenTextCollector.collect(root)
+
+        assertFalse(result.contains("typed-private-password"))
+        assertFalse(result.contains("Account form"))
+        assertTrue(result.contains("Continue"))
     }
 
     @Test

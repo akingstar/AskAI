@@ -36,24 +36,30 @@ internal object ScreenTextCollector {
             // Do not inspect descendants of password or editable fields.
             if (!node.isVisibleToUser || node.isPassword || node.isEditable) return
 
-            val raw = node.text?.toString()
-                ?: node.contentDescription?.toString()
+            // Parent nodes may aggregate text from editable descendants.
+            // Only read text from leaf nodes to avoid exposing typed values.
+            val childCount = node.childCount
 
-            if (!raw.isNullOrBlank()) {
-                val safe = SensitiveDataFilter.mask(raw)
-                    .replace(Regex("\\s+"), " ")
-                    .trim()
+            if (childCount == 0) {
+                val raw = node.text?.toString()
+                    ?: node.contentDescription?.toString()
 
-                if (safe.isNotBlank()) {
-                    if (output.isNotEmpty() && output.length < MAX_OUTPUT_CHARS) {
-                        output.append(". ")
+                if (!raw.isNullOrBlank()) {
+                    val safe = SensitiveDataFilter.mask(raw)
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+
+                    if (safe.isNotBlank()) {
+                        if (output.isNotEmpty() && output.length < MAX_OUTPUT_CHARS) {
+                            output.append(". ")
+                        }
+                        val remaining = MAX_OUTPUT_CHARS - output.length
+                        if (remaining > 0) output.append(safe.take(remaining))
                     }
-                    val remaining = MAX_OUTPUT_CHARS - output.length
-                    if (remaining > 0) output.append(safe.take(remaining))
                 }
             }
 
-            for (index in 0 until node.childCount) {
+            for (index in 0 until childCount) {
                 if (visited >= MAX_NODES ||
                     output.length >= MAX_OUTPUT_CHARS
                 ) break
